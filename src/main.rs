@@ -1,0 +1,159 @@
+mod calc;
+mod error;
+mod tourney;
+
+use crate::calc::SwitzerlandPlayer;
+use crate::tourney::tourney_cli;
+use clap::Parser;
+use error::Result;
+use linked_hash_map::LinkedHashMap;
+use std::cmp::Ordering;
+use std::path::PathBuf;
+use std::process::exit;
+
+#[derive(clap::Parser, Debug)]
+struct Args {
+    #[command(subcommand)]
+    command: Commands,
+}
+
+#[derive(clap::Subcommand, Debug)]
+enum Commands {
+    /// Initialize the power database
+    Init {
+        /// The path to the database file to create
+        db: PathBuf,
+    },
+    /// Query the database
+    Query {
+        /// The path to the database
+        db: PathBuf,
+        /// The users to query. If none specified, query all
+        query: Option<Vec<String>>,
+        /// Output powers to more decimal places, as well as outputting the deviation and volatility
+        #[arg(short, long)]
+        verbose: bool,
+    },
+    /// Summarizes the differences between databases
+    Compare {
+        /// The path to the old database
+        old_db: PathBuf,
+        /// The path to the new database
+        new_db: PathBuf,
+        /// The users to query. If none specified, query all
+        query: Option<Vec<String>>,
+    },
+    /// Run a tournament
+    Tourney {
+        /// The path to the input database
+        in_db: PathBuf,
+        /// The path to the database to create as a result
+        out_db: PathBuf,
+    },
+}
+
+fn main() {
+    let args = Args::parse();
+    if let Err(e) = run(args) {
+        eprintln!("{e}");
+        exit(1);
+    }
+}
+
+fn run(args: Args) -> Result<()> {
+    use Commands::*;
+    match args.command {
+        Init { db } => {
+            calc::init_db(&db)?;
+            println!("Initialized DB at {}", db.display());
+        }
+        Query { db, query, verbose } => {
+            let results = calc::query(&db, query.as_ref())?;
+            println!("Found {} players:", results.len());
+            for player in results {
+                if !verbose {
+                    print_player_simply(None, &player, true);
+                } else {
+                    println!(
+                        "  #{} {}: {:?}",
+                        player.rank_index + 1,
+                        player.name,
+                        player.rating
+                    );
+                }
+            }
+        }
+        Compare {
+            old_db,
+            new_db,
+            query,
+        } => {
+            let old_results = calc::query(&old_db, None)?
+                .into_iter()
+                .map(|x| (x.name.clone(), x))
+                .collect::<LinkedHashMap<_, _>>();
+            let new_results = calc::query(&new_db, query.as_ref())?;
+            println!("Found {} players:", new_results.len());
+            summarize_differences(&old_results, &new_results);
+        }
+        Tourney { in_db, out_db } => tourney_cli(&in_db, &out_db)?,
+    }
+    Ok(())
+}
+
+pub fn summarize_differences(
+    old_results: &LinkedHashMap<String, SwitzerlandPlayer>,
+    new_results: &Vec<SwitzerlandPlayer>,
+) {
+    for new_player in new_results {
+        let old_result = old_results.get(&new_player.name);
+        if let Some(old_result) = old_result && old_result.rating == new_player.rating {
+            continue;
+        }
+        print_player_simply(old_result, new_player, true);
+    }
+}
+
+fn print_player_simply(
+    old_player: Option<&SwitzerlandPlayer>,
+    new_player: &SwitzerlandPlayer,
+    show_rank: bool,
+) {
+    if let Some(old_player) = old_player {
+        println!(
+            "- {}: {:.1} SP -> {:.1} SP ({:+.1}){}",
+            new_player.name,
+            old_player.rating.rating,
+            new_player.rating.rating,
+            new_player.rating.rating - old_player.rating.rating,
+            if show_rank {
+                match new_player.rank_index.cmp(&old_player.rank_index) {
+                    Ordering::Equal => format!("; #{} =>", new_player.rank_index + 1),
+                    Ordering::Less => format!(
+                        "; #{} -> #{} ⇑",
+                        old_player.rank_index + 1,
+                        new_player.rank_index + 1
+                    ),
+                    Ordering::Greater => format!(
+                        "; #{} -> #{} ⇓",
+                        old_player.rank_index + 1,
+                        new_player.rank_index + 1
+                    ),
+                }
+            } else {
+                "".to_string()
+            }
+        );
+    } else {
+        println!(
+            "- {}: {:.1} SP{}",
+            new_player.name,
+            new_player.rating.rating,
+            if show_rank {
+                format!("; #{}", new_player.rank_index + 1)
+            } else {
+                "".to_string()
+            }
+        );
+    }
+}

@@ -1,0 +1,16 @@
+[package]
+name = "switzerland-power-calc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.5.41", features = ["derive"] }
+skillratings = { version = "0.27.1", features = ["serde"] }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_cbor = "0.11.2"
+thiserror = "2.0.12"
+rustyline = { version = "16.0.0", default-features = false, features = ["derive"] }
+strsim = "0.11.1"
+trie-rs = "0.4.2"
+linked-hash-map = "0.5.6"
+ansi_term = "0.12.1"
