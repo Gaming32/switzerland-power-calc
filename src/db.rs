@@ -63,8 +63,9 @@ pub fn query(file: &Path, queries: Option<&Vec<String>>) -> Result<Vec<Switzerla
 
     let mut results = Vec::with_capacity(queries.len());
     for query in queries {
+        let query = query.to_lowercase();
         let Some((closest_match, _)) = db.players.iter().enumerate().max_by_key(|(_, x)| {
-            totally_ordered::TotallyOrdered(strsim::jaro_winkler(&query, &*x.name))
+            totally_ordered::TotallyOrdered(strsim::jaro_winkler(&query, &x.name.to_lowercase()))
         }) else {
             break;
         };
