@@ -7,12 +7,12 @@ use rustyline::Completer;
 use rustyline::hint::{Hint, Hinter};
 use rustyline::history::DefaultHistory;
 use rustyline::{Context, Editor, Helper, Highlighter, Validator};
-use skillratings::glicko2::{glicko2, Glicko2Config, Glicko2Rating};
+use skillratings::Outcomes;
+use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2};
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 use std::fs;
 use std::path::Path;
-use skillratings::Outcomes;
 use trie_rs::Trie;
 
 pub fn tourney_cli(in_db: &Path, out_db: &Path) -> Result<()> {
@@ -30,8 +30,14 @@ pub fn tourney_cli(in_db: &Path, out_db: &Path) -> Result<()> {
 
     let mut teams = HashMap::<String, String>::new();
 
-    println!("{}", Color::Green.paint("Enter team names and player names one after the other."));
-    println!("{}", Color::Green.paint("Enter a blank team name when done."));
+    println!(
+        "{}",
+        Color::Green.paint("Enter team names and player names one after the other.")
+    );
+    println!(
+        "{}",
+        Color::Green.paint("Enter a blank team name when done.")
+    );
     rl.set_helper(Some(TrieHinter {
         trie: Trie::from_iter(old_players.keys()),
         enabled: false,
@@ -63,9 +69,18 @@ pub fn tourney_cli(in_db: &Path, out_db: &Path) -> Result<()> {
     }
     println!();
 
-    println!("{}", Color::Green.paint("Enter the teams from each match, in order."));
-    println!("{}", Color::Green.paint("After entering both teams, enter 1 or 2 to indicate the winner"));
-    println!("{}", Color::Green.paint("Enter a blank team name when done."));
+    println!(
+        "{}",
+        Color::Green.paint("Enter the teams from each match, in order.")
+    );
+    println!(
+        "{}",
+        Color::Green.paint("After entering both teams, enter 1 or 2 to indicate the winner")
+    );
+    println!(
+        "{}",
+        Color::Green.paint("Enter a blank team name when done.")
+    );
     rl.set_helper(Some(TrieHinter {
         trie: Trie::from_iter(teams.keys()),
         enabled: false,
@@ -80,10 +95,20 @@ pub fn tourney_cli(in_db: &Path, out_db: &Path) -> Result<()> {
                     break Ok(None);
                 }
                 let Some(player_name) = teams.get(&name) else {
-                    println!("{} {}", Color::Red.paint("Could not find a team named"), name);
+                    println!(
+                        "{} {}",
+                        Color::Red.paint("Could not find a team named"),
+                        name
+                    );
                     continue;
                 };
-                break Ok(Some((player_name, new_players.get(player_name).expect("Player not found for team").rating)));
+                break Ok(Some((
+                    player_name,
+                    new_players
+                        .get(player_name)
+                        .expect("Player not found for team")
+                        .rating,
+                )));
             }
         };
         let Some((player1_name, player1)) = get_player(" team 1> ")? else {
@@ -103,12 +128,8 @@ pub fn tourney_cli(in_db: &Path, out_db: &Path) -> Result<()> {
             }
         };
 
-        let (new_player1, new_player2) = glicko2(
-            &player1,
-            &player2,
-            &outcome,
-            &Glicko2Config::default()
-        );
+        let (new_player1, new_player2) =
+            glicko2(&player1, &player2, &outcome, &Glicko2Config::default());
 
         let mut update_player = |player_name, new_rating| {
             let player = new_players.get_mut(player_name).unwrap();

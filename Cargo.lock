@@ -376,6 +376,7 @@ dependencies = [
  "skillratings",
  "strsim",
  "thiserror",
+ "totally-ordered",
  "trie-rs",
 ]
 
@@ -409,6 +410,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "totally-ordered"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6fae71db48bb7a5a1ffd2c5d32a398a5f5f264dc570dda86e6604ff0eb78ae21"
 
 [[package]]
 name = "trie-rs"

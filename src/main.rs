@@ -107,7 +107,9 @@ pub fn summarize_differences(
 ) {
     for new_player in new_results {
         let old_result = old_results.get(&new_player.name);
-        if let Some(old_result) = old_result && old_result.rating == new_player.rating {
+        if let Some(old_result) = old_result
+            && old_result.rating == new_player.rating
+        {
             continue;
         }
         print_player_simply(old_result, new_player, true);

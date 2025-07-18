@@ -1,8 +1,8 @@
 use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use skillratings::glicko2::Glicko2Rating;
-use std::path::Path;
 use std::fs;
+use std::path::Path;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Database {
@@ -63,12 +63,9 @@ pub fn query(file: &Path, queries: Option<&Vec<String>>) -> Result<Vec<Switzerla
 
     let mut results = Vec::with_capacity(queries.len());
     for query in queries {
-        let Some((closest_match, _)) = db
-            .players
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, x)| strsim::damerau_levenshtein(&query, &*x.name))
-        else {
+        let Some((closest_match, _)) = db.players.iter().enumerate().max_by_key(|(_, x)| {
+            totally_ordered::TotallyOrdered(strsim::jaro_winkler(&query, &*x.name))
+        }) else {
             break;
         };
         results.push(db.players.remove(closest_match));
