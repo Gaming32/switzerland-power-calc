@@ -1,8 +1,8 @@
-mod calc;
+mod db;
 mod error;
 mod tourney;
 
-use crate::calc::SwitzerlandPlayer;
+use crate::db::SwitzerlandPlayer;
 use crate::tourney::tourney_cli;
 use clap::Parser;
 use error::Result;
@@ -64,11 +64,11 @@ fn run(args: Args) -> Result<()> {
     use Commands::*;
     match args.command {
         Init { db } => {
-            calc::init_db(&db)?;
+            db::init_db(&db)?;
             println!("Initialized DB at {}", db.display());
         }
         Query { db, query, verbose } => {
-            let results = calc::query(&db, query.as_ref())?;
+            let results = db::query(&db, query.as_ref())?;
             println!("Found {} players:", results.len());
             for player in results {
                 if !verbose {
@@ -88,11 +88,11 @@ fn run(args: Args) -> Result<()> {
             new_db,
             query,
         } => {
-            let old_results = calc::query(&old_db, None)?
+            let old_results = db::query(&old_db, None)?
                 .into_iter()
                 .map(|x| (x.name.clone(), x))
                 .collect::<LinkedHashMap<_, _>>();
-            let new_results = calc::query(&new_db, query.as_ref())?;
+            let new_results = db::query(&new_db, query.as_ref())?;
             println!("Found {} players:", new_results.len());
             summarize_differences(&old_results, &new_results);
         }

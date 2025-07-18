@@ -1,4 +1,4 @@
-use crate::calc::{Database, SwitzerlandPlayer};
+use crate::db::{Database, SwitzerlandPlayer};
 use crate::error::Result;
 use crate::{print_player_simply, summarize_differences};
 use ansi_term::{Color, Style};
