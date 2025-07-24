@@ -2,6 +2,7 @@ use crate::error::Result;
 use serde::{Deserialize, Serialize};
 use skillratings::glicko2::Glicko2Rating;
 use std::fs;
+use std::num::NonZeroU32;
 use std::path::Path;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -12,10 +13,33 @@ pub struct Database {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct SwitzerlandPlayer {
     pub name: String,
-    #[serde(skip)]
-    pub rank_index: usize,
+    #[serde(default = "SeasonState::old_db_migration")]
+    pub season: SeasonState,
     #[serde(flatten)]
     pub rating: Glicko2Rating,
+}
+
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SeasonState {
+    #[default]
+    NotParticipated,
+    Participated(#[serde(skip)] Option<NonZeroU32>),
+}
+
+impl SeasonState {
+    fn old_db_migration() -> Self {
+        Self::Participated(None)
+    }
+
+    pub fn unwrap_rank(&self) -> u32 {
+        match self {
+            SeasonState::Participated(rank) => rank
+                .expect("unwrap_rank() called on uninitialized rank")
+                .get(),
+            SeasonState::NotParticipated => panic!("unwrap_rank() called on non-season rank"),
+        }
+    }
 }
 
 impl Database {
@@ -30,8 +54,12 @@ impl Database {
     }
 
     fn init_rank(&mut self) {
-        for (i, player) in self.players.iter_mut().enumerate() {
-            player.rank_index = i;
+        let mut rank = 1;
+        for player in self.players.iter_mut() {
+            if let SeasonState::Participated(ref mut player_rank) = player.season {
+                *player_rank = NonZeroU32::new(rank);
+                rank += 1;
+            }
         }
     }
 
@@ -52,11 +80,21 @@ pub fn init_db(file: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn query(file: &Path, queries: Option<&Vec<String>>) -> Result<Vec<SwitzerlandPlayer>> {
+pub fn query(
+    file: &Path,
+    queries: Option<&Vec<String>>,
+    include_non_participated: bool,
+) -> Result<Vec<SwitzerlandPlayer>> {
     let mut db = Database::read(file)?;
     if db.players.is_empty() {
         return Ok(db.players);
     }
+
+    if !include_non_participated {
+        db.players
+            .retain(|player| matches!(player.season, SeasonState::Participated(..)));
+    }
+
     let Some(queries) = queries else {
         return Ok(db.players);
     };
@@ -71,6 +109,6 @@ pub fn query(file: &Path, queries: Option<&Vec<String>>) -> Result<Vec<Switzerla
         };
         results.push(db.players.remove(closest_match));
     }
-    results.sort_by_key(|x| x.rank_index);
+    results.sort_by(|p1, p2| p2.rating.rating.total_cmp(&p1.rating.rating));
     Ok(results)
 }
