@@ -13,32 +13,17 @@ pub struct Database {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct SwitzerlandPlayer {
     pub name: String,
-    #[serde(default = "SeasonState::old_db_migration")]
-    pub season: SeasonState,
+    #[serde(skip)]
+    pub rank: Option<NonZeroU32>,
     #[serde(flatten)]
     pub rating: Glicko2Rating,
 }
 
-#[derive(Serialize, Deserialize, Debug, Copy, Clone, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum SeasonState {
-    #[default]
-    NotParticipated,
-    Participated(#[serde(skip)] Option<NonZeroU32>),
-}
-
-impl SeasonState {
-    fn old_db_migration() -> Self {
-        Self::Participated(None)
-    }
-
+impl SwitzerlandPlayer {
     pub fn unwrap_rank(&self) -> u32 {
-        match self {
-            SeasonState::Participated(rank) => rank
-                .expect("unwrap_rank() called on uninitialized rank")
-                .get(),
-            SeasonState::NotParticipated => panic!("unwrap_rank() called on non-season rank"),
-        }
+        self.rank
+            .expect("unwrap_rank() called on uninitialized rank")
+            .get()
     }
 }
 
@@ -54,12 +39,8 @@ impl Database {
     }
 
     fn init_rank(&mut self) {
-        let mut rank = 1;
-        for player in self.players.iter_mut() {
-            if let SeasonState::Participated(ref mut player_rank) = player.season {
-                *player_rank = NonZeroU32::new(rank);
-                rank += 1;
-            }
+        for (i, player) in self.players.iter_mut().enumerate() {
+            player.rank = NonZeroU32::new((i + 1) as u32);
         }
     }
 
@@ -80,19 +61,10 @@ pub fn init_db(file: &Path) -> Result<()> {
     Ok(())
 }
 
-pub fn query(
-    file: &Path,
-    queries: Option<&Vec<String>>,
-    include_non_participated: bool,
-) -> Result<Vec<SwitzerlandPlayer>> {
+pub fn query(file: &Path, queries: Option<&Vec<String>>) -> Result<Vec<SwitzerlandPlayer>> {
     let mut db = Database::read(file)?;
     if db.players.is_empty() {
         return Ok(db.players);
-    }
-
-    if !include_non_participated {
-        db.players
-            .retain(|player| matches!(player.season, SeasonState::Participated(_)));
     }
 
     let Some(queries) = queries else {

@@ -1,10 +1,8 @@
 mod db;
 mod error;
-mod season;
 mod tourney;
 
-use crate::db::{SeasonState, SwitzerlandPlayer};
-use crate::season::new_season;
+use crate::db::SwitzerlandPlayer;
 use crate::tourney::tourney_cli;
 use clap::Parser;
 use error::Result;
@@ -35,9 +33,6 @@ enum Commands {
         /// Output powers to more decimal places, as well as outputting the deviation and volatility
         #[arg(short, long)]
         verbose: bool,
-        /// Include players that have not participated in the current season
-        #[arg(short, long)]
-        include_non_participated: bool,
     },
     /// Summarizes the differences between databases
     Compare {
@@ -50,13 +45,6 @@ enum Commands {
     },
     /// Run a tournament
     Tourney {
-        /// The path to the input database
-        in_db: PathBuf,
-        /// The path to the database to create as a result
-        out_db: PathBuf,
-    },
-    /// Start a new season, creating a new database
-    NewSeason {
         /// The path to the input database
         in_db: PathBuf,
         /// The path to the database to create as a result
@@ -79,13 +67,8 @@ fn run(args: Args) -> Result<()> {
             db::init_db(&db)?;
             println!("Initialized DB at {}", db.display());
         }
-        Query {
-            db,
-            query,
-            verbose,
-            include_non_participated,
-        } => {
-            let results = db::query(&db, query.as_ref(), include_non_participated)?;
+        Query { db, query, verbose } => {
+            let results = db::query(&db, query.as_ref())?;
             println!("Found {} players:", results.len());
             for player in results {
                 if !verbose {
@@ -93,11 +76,7 @@ fn run(args: Args) -> Result<()> {
                 } else {
                     println!(
                         "  #{} {}: {:?}",
-                        if let SeasonState::Participated(rank) = player.season {
-                            format!("{}", rank.unwrap())
-                        } else {
-                            "?".to_string()
-                        },
+                        player.unwrap_rank(),
                         player.name,
                         player.rating
                     );
@@ -109,16 +88,15 @@ fn run(args: Args) -> Result<()> {
             new_db,
             query,
         } => {
-            let old_results = db::query(&old_db, None, false)?
+            let old_results = db::query(&old_db, None)?
                 .into_iter()
                 .map(|x| (x.name.clone(), x))
                 .collect::<LinkedHashMap<_, _>>();
-            let new_results = db::query(&new_db, query.as_ref(), false)?;
+            let new_results = db::query(&new_db, query.as_ref())?;
             println!("Found {} players:", new_results.len());
             summarize_differences(&old_results, &new_results);
         }
         Tourney { in_db, out_db } => tourney_cli(&in_db, &out_db)?,
-        NewSeason { in_db, out_db } => new_season(&in_db, &out_db)?,
     }
     Ok(())
 }
@@ -134,11 +112,7 @@ pub fn summarize_differences(
         {
             continue;
         }
-        print_player_simply(
-            old_result.filter(|x| matches!(x.season, SeasonState::Participated(_))),
-            new_player,
-            true,
-        );
+        print_player_simply(old_result, new_player, true);
     }
 }
 
@@ -155,9 +129,8 @@ fn print_player_simply(
             new_player.rating.rating,
             new_player.rating.rating - old_player.rating.rating,
             if show_rank {
-                // If we're doing a comparison, there's always a rank
-                let old_rank = old_player.season.unwrap_rank();
-                let new_rank = new_player.season.unwrap_rank();
+                let old_rank = old_player.unwrap_rank();
+                let new_rank = new_player.unwrap_rank();
                 match new_rank.cmp(&old_rank) {
                     Ordering::Equal => format!("; #{new_rank} =>"),
                     Ordering::Less => format!("; #{old_rank} -> #{new_rank} ⇑"),
@@ -172,8 +145,8 @@ fn print_player_simply(
             "- {}: {:.1} SP{}",
             new_player.name,
             new_player.rating.rating,
-            if show_rank && let SeasonState::Participated(rank) = new_player.season {
-                format!("; #{}", rank.unwrap())
+            if show_rank {
+                format!("; #{}", new_player.unwrap_rank())
             } else {
                 "".to_string()
             }

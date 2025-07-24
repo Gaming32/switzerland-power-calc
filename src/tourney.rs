@@ -1,4 +1,3 @@
-use crate::db::SeasonState::Participated;
 use crate::db::{Database, SwitzerlandPlayer};
 use crate::error::Result;
 use crate::{print_player_simply, summarize_differences};
@@ -136,7 +135,6 @@ pub fn tourney_cli(in_db: &Path, out_db: &Path) -> Result<()> {
             let player = new_players.get_mut(player_name).unwrap();
             temp_printing_player.rating = player.rating;
             player.rating = new_rating;
-            player.season = Participated(None);
             print_player_simply(Some(&temp_printing_player), player, false);
         };
         update_player(player1_name, new_player1);
