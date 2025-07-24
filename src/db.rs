@@ -66,7 +66,6 @@ pub fn query(file: &Path, queries: Option<&Vec<String>>) -> Result<Vec<Switzerla
     if db.players.is_empty() {
         return Ok(db.players);
     }
-
     let Some(queries) = queries else {
         return Ok(db.players);
     };
@@ -81,6 +80,6 @@ pub fn query(file: &Path, queries: Option<&Vec<String>>) -> Result<Vec<Switzerla
         };
         results.push(db.players.remove(closest_match));
     }
-    results.sort_by(|p1, p2| p2.rating.rating.total_cmp(&p1.rating.rating));
+    results.sort_by_key(|x| x.rank);
     Ok(results)
 }
