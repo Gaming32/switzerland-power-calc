@@ -135,7 +135,7 @@ pub fn summarize_differences(
             continue;
         }
         print_player_simply(
-            old_result.filter(|x| matches!(x.season, SeasonState::Participated(..))),
+            old_result.filter(|x| matches!(x.season, SeasonState::Participated(_))),
             new_player,
             true,
         );

@@ -9,41 +9,65 @@ pub fn new_season(in_db: &Path, out_db: &Path) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
 
+    const GROUP_COUNT: usize = 6;
+
     let mut db = Database::read(in_db)?;
-    db.players.retain_mut(|player| {
-        if matches!(player.season, SeasonState::NotParticipated) {
-            return true;
+
+    let participating_players = db
+        .players
+        .iter_mut()
+        .filter(|x| matches!(x.season, SeasonState::Participated(_)))
+        .collect::<Vec<_>>();
+
+    // Roughly https://lemire.me/blog/2025/05/22/dividing-an-array-into-fair-sized-chunks
+    let small_chunk_size = participating_players.len() / GROUP_COUNT;
+    let large_chunk_size = small_chunk_size + 1;
+    let large_chunk_count = participating_players.len() % GROUP_COUNT;
+    let small_chunk_count = GROUP_COUNT - large_chunk_count;
+
+    let mut groups = [const { Vec::new() }; GROUP_COUNT];
+    let mut group_index = 0;
+    for player in participating_players {
+        loop {
+            let group_size = if group_index < small_chunk_count {
+                small_chunk_size
+            } else {
+                large_chunk_size
+            };
+            if groups[group_index].len() < group_size {
+                break;
+            } else {
+                group_index += 1;
+            }
         }
+        groups[group_index].push(player);
+    }
 
-        let old_rating = player.rating.rating;
-        let new_rating = find_new_rating(player.rating.rating);
+    for (i, group) in groups.into_iter().enumerate() {
+        let average_rating =
+            group.iter().map(|p| p.rating.rating).sum::<f64>() / group.len() as f64;
         println!(
-            "#{} {}: {:.1} SP -> {:.1} SP",
-            player.season.unwrap_rank(),
-            player.name,
-            old_rating,
-            new_rating
+            "Group {} ({} players) = {:.1} SP:",
+            i + 1,
+            group.len(),
+            average_rating
         );
-
-        player.season = SeasonState::NotParticipated;
-        if new_rating != 1500.0 {
+        for player in group {
+            println!(
+                "  #{} {}: {:.1} SP -> {:.1} SP",
+                player.season.unwrap_rank(),
+                player.name,
+                player.rating.rating,
+                average_rating
+            );
             player.rating = Glicko2Rating {
-                rating: new_rating,
+                rating: average_rating,
                 ..Default::default()
             };
-            true
-        } else {
-            false
         }
-    });
+    }
 
     db.write(out_db)?;
 
     Ok(())
-}
-
-fn find_new_rating(old_rating: f64) -> f64 {
-    const GRANULARITY: f64 = 250.0;
-    let bucket = ((old_rating - 1500.0) / GRANULARITY) as i32;
-    bucket as f64 * GRANULARITY + 1500.0
 }

@@ -92,7 +92,7 @@ pub fn query(
 
     if !include_non_participated {
         db.players
-            .retain(|player| matches!(player.season, SeasonState::Participated(..)));
+            .retain(|player| matches!(player.season, SeasonState::Participated(_)));
     }
 
     let Some(queries) = queries else {
