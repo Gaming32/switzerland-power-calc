@@ -9,8 +9,6 @@ pub fn new_season(in_db: &Path, out_db: &Path) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
 
-    const GROUP_COUNT: usize = 6;
-
     let mut db = Database::read(in_db)?;
 
     let participating_players = db
@@ -18,22 +16,19 @@ pub fn new_season(in_db: &Path, out_db: &Path) -> Result<()> {
         .iter_mut()
         .filter(|x| matches!(x.season, SeasonState::Participated(_)))
         .collect::<Vec<_>>();
+    let player_count = participating_players.len();
 
-    // Roughly https://lemire.me/blog/2025/05/22/dividing-an-array-into-fair-sized-chunks
-    let small_chunk_size = participating_players.len() / GROUP_COUNT;
-    let large_chunk_size = small_chunk_size + 1;
-    let large_chunk_count = participating_players.len() % GROUP_COUNT;
-    let small_chunk_count = GROUP_COUNT - large_chunk_count;
+    // This is basically implemented the same way as SendouQ, just with different percentages.
+    // SendouQ uses 5%, 10%, 15%, 17.5%, 20%, 17.5%, 15%
+    // We use 5%, 10%, 20%, 30%, 20%, 15%
+    const PERCENTAGE_COUNT: usize = 5;
+    const PERCENTAGES: [usize; PERCENTAGE_COUNT] = [5, 10, 20, 30, 20];
+    let mut groups = [const { Vec::new() }; PERCENTAGE_COUNT + 1];
 
-    let mut groups = [const { Vec::new() }; GROUP_COUNT];
     let mut group_index = 0;
     for player in participating_players {
-        loop {
-            let group_size = if group_index < small_chunk_count {
-                small_chunk_size
-            } else {
-                large_chunk_size
-            };
+        while group_index < PERCENTAGE_COUNT {
+            let group_size = player_count * PERCENTAGES[group_index] / 100;
             if groups[group_index].len() < group_size {
                 break;
             } else {
@@ -43,14 +38,18 @@ pub fn new_season(in_db: &Path, out_db: &Path) -> Result<()> {
         groups[group_index].push(player);
     }
 
-    for (i, group) in groups.into_iter().enumerate() {
-        let average_rating =
-            group.iter().map(|p| p.rating.rating).sum::<f64>() / group.len() as f64;
+    let mut group_ratings = groups
+        .each_ref()
+        .map(|group| group.iter().map(|p| p.rating.rating).sum::<f64>() / group.len() as f64);
+    group_ratings[0] = group_ratings[1];
+    group_ratings[PERCENTAGE_COUNT] = group_ratings[PERCENTAGE_COUNT - 1];
+
+    for (i, (group, new_rating)) in groups.into_iter().zip(group_ratings).enumerate() {
         println!(
             "Group {} ({} players) = {:.1} SP:",
             i + 1,
             group.len(),
-            average_rating
+            new_rating
         );
         for player in group {
             println!(
@@ -58,10 +57,10 @@ pub fn new_season(in_db: &Path, out_db: &Path) -> Result<()> {
                 player.season.unwrap_rank(),
                 player.name,
                 player.rating.rating,
-                average_rating
+                new_rating
             );
             player.rating = Glicko2Rating {
-                rating: average_rating,
+                rating: new_rating,
                 ..Default::default()
             };
         }
