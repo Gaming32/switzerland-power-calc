@@ -1,11 +1,13 @@
 mod db;
 mod error;
+mod sendou;
 mod tourney;
 
 use crate::db::SwitzerlandPlayer;
+use crate::sendou::sendou_cli;
 use crate::tourney::tourney_cli;
 use clap::Parser;
-use error::Result;
+use error::{Error, Result};
 use linked_hash_map::LinkedHashMap;
 use std::cmp::Ordering;
 use std::path::PathBuf;
@@ -49,6 +51,15 @@ enum Commands {
         in_db: PathBuf,
         /// The path to the database to create as a result
         out_db: PathBuf,
+    },
+    /// Automatically process a tournament being run on sendou.ink
+    Sendou {
+        /// The path to the input database
+        in_db: PathBuf,
+        /// The path to the database to create as a result
+        out_db: PathBuf,
+        /// The URL to the tournament on sendou.ink
+        tournament_url: String,
     },
 }
 
@@ -97,6 +108,15 @@ fn run(args: Args) -> Result<()> {
             summarize_differences(&old_results, &new_results);
         }
         Tourney { in_db, out_db } => tourney_cli(&in_db, &out_db)?,
+        Sendou {
+            in_db,
+            out_db,
+            tournament_url,
+        } => tokio::runtime::Runtime::new()?.block_on(sendou_cli(
+            &in_db,
+            &out_db,
+            &tournament_url,
+        ))?,
     }
     Ok(())
 }
