@@ -1,3 +1,4 @@
+mod cli_helpers;
 mod db;
 mod error;
 mod sendou;

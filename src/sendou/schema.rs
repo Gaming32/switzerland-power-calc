@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use serde_repr::Deserialize_repr;
 
+pub type SendouId = u32;
+
 #[derive(Clone, Debug, Deserialize)]
 pub struct TournamentRoot {
     pub tournament: Tournament,
@@ -28,20 +30,20 @@ pub struct TournamentMatch {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TournamentMatchOpponent {
-    pub id: u32,
+    pub id: SendouId,
     pub result: Option<TournamentMatchResult>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-enum TournamentMatchResult {
+pub enum TournamentMatchResult {
     Win,
     Loss,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize_repr)]
 #[repr(u8)]
-enum TournamentMatchStatus {
+pub enum TournamentMatchStatus {
     Locked = 0,
     Waiting = 1,
     Ready = 2,
@@ -76,17 +78,23 @@ pub enum TournamentBracketProgression {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TournamentTeam {
-    pub id: u32,
+    pub id: SendouId,
     pub name: String,
     pub members: Vec<TournamentTeamMember>,
+    pub check_ins: Vec<TournamentTeamCheckIn>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TournamentTeamMember {
-    pub user_id: u32,
+    pub user_id: SendouId,
     pub username: String,
-    pub discord_id: serenity::model::id::UserId,
+    pub discord_id: serenity::all::UserId,
+    pub custom_url: Option<String>,
     pub in_game_name: String,
 }
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct TournamentTeamCheckIn {}

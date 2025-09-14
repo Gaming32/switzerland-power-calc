@@ -20,9 +20,15 @@ pub enum Error {
     #[error("URL parsing error: {0}")]
     Url(#[from] url::ParseError),
     #[error("Discord error: {0}")]
-    Discord(#[from] serenity::Error),
+    Discord(#[source] Box<serenity::Error>),
     #[error("{0}")]
     Custom(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+impl From<serenity::Error> for Error {
+    fn from(value: serenity::Error) -> Self {
+        Self::Discord(Box::new(value))
+    }
+}
