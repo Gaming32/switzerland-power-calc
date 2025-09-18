@@ -9,7 +9,7 @@ use crate::sendou::sendou_cli;
 use crate::tourney::tourney_cli;
 use clap::Parser;
 use error::{Error, Result};
-use linked_hash_map::LinkedHashMap;
+use hashlink::LinkedHashMap;
 use std::cmp::Ordering;
 use std::path::PathBuf;
 use std::process::exit;
@@ -142,10 +142,21 @@ fn print_player_simply(
     new_player: &SwitzerlandPlayer,
     show_rank: bool,
 ) {
+    println!(
+        "- {}: {}",
+        new_player.name,
+        format_player_rank_summary(old_player, new_player, show_rank)
+    );
+}
+
+pub fn format_player_rank_summary(
+    old_player: Option<&SwitzerlandPlayer>,
+    new_player: &SwitzerlandPlayer,
+    show_rank: bool,
+) -> String {
     if let Some(old_player) = old_player {
-        println!(
-            "- {}: {:.1} SP -> {:.1} SP ({:+.1}){}",
-            new_player.name,
+        format!(
+            "{:.1} SP → {:.1} SP ({:+.1}){}",
             old_player.rating.rating,
             new_player.rating.rating,
             new_player.rating.rating - old_player.rating.rating,
@@ -153,24 +164,23 @@ fn print_player_simply(
                 let old_rank = old_player.unwrap_rank();
                 let new_rank = new_player.unwrap_rank();
                 match new_rank.cmp(&old_rank) {
-                    Ordering::Equal => format!("; #{new_rank} =>"),
-                    Ordering::Less => format!("; #{old_rank} -> #{new_rank} ⇑"),
-                    Ordering::Greater => format!("; #{old_rank} -> #{new_rank} ⇓"),
+                    Ordering::Equal => format!("; #{new_rank} ⇒"),
+                    Ordering::Less => format!("; #{old_rank} → #{new_rank} ⇑"),
+                    Ordering::Greater => format!("; #{old_rank} → #{new_rank} ⇓"),
                 }
             } else {
                 "".to_string()
             }
-        );
+        )
     } else {
-        println!(
-            "- {}: {:.1} SP{}",
-            new_player.name,
+        format!(
+            "{:.1} SP{}",
             new_player.rating.rating,
             if show_rank {
                 format!("; #{}", new_player.unwrap_rank())
             } else {
                 "".to_string()
             }
-        );
+        )
     }
 }

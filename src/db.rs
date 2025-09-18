@@ -1,5 +1,5 @@
 use crate::error::Result;
-use linked_hash_map::LinkedHashMap;
+use hashlink::LinkedHashMap;
 use serde::{Deserialize, Serialize};
 use skillratings::glicko2::Glicko2Rating;
 use std::cmp::Ordering;
@@ -38,6 +38,19 @@ impl SwitzerlandPlayer {
 impl Database {
     pub fn new() -> Self {
         Self { players: vec![] }
+    }
+
+    pub fn new_from_map(map: SwitzerlandPlayerMap) -> Self {
+        let default_rating = Glicko2Rating::default();
+        let mut result = Self {
+            players: map
+                .into_iter()
+                .map(|(_, v)| v)
+                .filter(|x| x.rating != default_rating)
+                .collect(),
+        };
+        result.sort();
+        result
     }
 
     pub fn sort(&mut self) {

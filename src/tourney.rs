@@ -143,11 +143,7 @@ pub fn tourney_cli(in_db: &Path, out_db: &Path) -> Result<()> {
     }
     println!();
 
-    let mut new_db = Database::new();
-    new_db
-        .players
-        .extend(new_players.into_iter().map(|(_, v)| v));
-    new_db.sort();
+    let new_db = Database::new_from_map(new_players);
     new_db.write(out_db)?;
 
     println!("SP comparison (switzerland-power-calc compare):");

@@ -2,17 +2,23 @@ mod schema;
 
 use crate::cli_helpers::{TrieHinter, print_seeding_instructions};
 use crate::db::{Database, SwitzerlandPlayer};
-use crate::sendou::schema::TournamentRoot;
-use crate::{Error, Result};
+use crate::sendou::schema::{TournamentRoot, TournamentStageSettings};
+use crate::{Error, Result, format_player_rank_summary, summarize_differences};
 use ansi_term::Color;
+use chrono::Utc;
 use reqwest::Url;
 use rustyline::Editor;
 use rustyline::history::DefaultHistory;
-use serenity::all::{Channel, ChannelId, ChannelType, HttpBuilder};
+use serenity::all::{
+    Builder, Channel, ChannelId, ChannelType, CreateMessage, HttpBuilder, Mentionable,
+};
 use std::collections::HashMap;
+use std::fmt::Write;
 use std::fs;
 use std::path::Path;
 use std::str::FromStr;
+use std::time::Duration;
+use tokio::time::sleep;
 use trie_rs::Trie;
 
 pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Result<()> {
@@ -57,16 +63,20 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         Channel::Guild(category) => category,
         _ => return Err(Error::Custom("Your Discord channel is weird".to_string())),
     };
-    let chat_discord = chat_category.guild_id.to_partial_guild(&http).await?;
+    let chat_guild = chat_category.guild_id.to_partial_guild(&http).await?;
 
-    let base_tournament = client
-        .get(tournament_url)
-        .send()
-        .await?
-        .json::<TournamentRoot>()
-        .await?
-        .tournament
-        .context;
+    let moderator_channel = env::<ChannelId>("DISCORD_MODERATOR_CHANNEL_ID")?;
+
+    let get_tournament = async || -> Result<_> {
+        Ok(client
+            .get(tournament_url.clone())
+            .send()
+            .await?
+            .json::<TournamentRoot>()
+            .await?
+            .tournament)
+    };
+    let base_tournament = get_tournament().await?.context;
 
     let mut rl = Editor::<TrieHinter, DefaultHistory>::new()?;
     let old_players = Database::read(in_db)?.into_map();
@@ -124,11 +134,76 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         )
     });
 
-    // CreateMessage::new()
-    //     .content("This is a test message")
-    //     .execute(&http, (ChannelId::new(738850747071987794), None))
-    //     .await
-    //     .unwrap();
+    if let Ok(delay) = base_tournament
+        .start_time
+        .signed_duration_since(Utc::now())
+        .to_std()
+    {
+        sleep(delay).await;
+    }
+
+    let round_count = loop {
+        let round_count = get_tournament()
+            .await?
+            .data
+            .stages
+            .iter()
+            .filter_map(|x| {
+                if let TournamentStageSettings::Swiss { swiss } = &x.settings {
+                    Some(swiss.round_count)
+                } else {
+                    None
+                }
+            })
+            .next();
+        if let Some(round_count) = round_count {
+            break round_count;
+        }
+        sleep(Duration::from_secs(30)).await;
+    };
+
+    // TODO: Main part
+
+    let new_db = Database::new_from_map(new_players);
+    new_db.write(out_db)?;
+
+    println!("SP comparison (switzerland-power-calc compare):");
+    summarize_differences(&old_players, &new_db.players);
+
+    println!("\nSending comparison to Discord...");
+    {
+        let mut message = "## Switzerland Power changes\n".to_string();
+        let player_name_to_discord_id = teams
+            .into_values()
+            .map(|(team, name)| (name, team.members.first().unwrap().discord_id))
+            .collect::<HashMap<_, _>>();
+        for new_player in &new_db.players {
+            let Some(discord_id) = player_name_to_discord_id.get(&new_player.name) else {
+                continue;
+            };
+            let old_result = old_players.get(&new_player.name);
+            if let Some(old_result) = old_result
+                && old_result.rating == new_player.rating
+            {
+                continue;
+            }
+            let Ok(member) = chat_guild.member(&http, discord_id).await else {
+                continue;
+            };
+            let _ = writeln!(
+                message,
+                "- {} {}",
+                member.mention(),
+                format_player_rank_summary(old_result, new_player, true)
+            );
+        }
+        message.truncate(message.len() - 1); // Remove trailing \n
+        CreateMessage::new()
+            .content(message)
+            .execute(&http, (moderator_channel, None))
+            .await?;
+    }
+    println!("Sent!");
 
     Ok(())
 }
