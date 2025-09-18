@@ -79,7 +79,6 @@ pub enum TournamentMatchStatus {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TournamentContext {
-    pub name: String,
     #[serde(with = "ts_seconds")]
     pub start_time: DateTime<Utc>,
     pub teams: Vec<TournamentTeam>,
@@ -91,18 +90,13 @@ pub struct TournamentTeam {
     pub id: SendouId,
     pub name: String,
     pub members: Vec<TournamentTeamMember>,
-    pub check_ins: Vec<TournamentTeamCheckIn>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TournamentTeamMember {
-    pub user_id: SendouId,
     pub username: String,
     pub discord_id: serenity::all::UserId,
     pub custom_url: Option<String>,
     pub in_game_name: String,
 }
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct TournamentTeamCheckIn {}
