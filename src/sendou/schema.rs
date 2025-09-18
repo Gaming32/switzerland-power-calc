@@ -21,12 +21,19 @@ pub struct Tournament {
 pub struct TournamentData {
     #[serde(rename = "stage")]
     pub stages: Vec<TournamentStage>,
+    #[serde(rename = "group")]
+    pub groups: Vec<TournamentGroup>,
+    #[serde(rename = "round")]
+    pub rounds: Vec<TournamentRound>,
     #[serde(rename = "match")]
     pub matches: Vec<TournamentMatch>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct TournamentStage {
+    pub id: SendouId,
+    pub name: String,
+    pub number: u32,
     #[serde(flatten)]
     pub settings: TournamentStageSettings,
 }
@@ -46,14 +53,29 @@ pub struct TournamentStageSwissSettings {
     pub round_count: u32,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
+pub struct TournamentGroup {
+    pub id: SendouId,
+    pub number: u32,
+    pub stage_id: SendouId,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
+pub struct TournamentRound {
+    pub id: SendouId,
+    pub group_id: SendouId,
+    pub number: u32,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub struct TournamentMatch {
     pub opponent1: Option<TournamentMatchOpponent>,
     pub opponent2: Option<TournamentMatchOpponent>,
+    pub round_id: SendouId,
     pub status: TournamentMatchStatus,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub struct TournamentMatchOpponent {
     pub id: SendouId,
     pub result: Option<TournamentMatchResult>,
@@ -79,6 +101,7 @@ pub enum TournamentMatchStatus {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TournamentContext {
+    pub name: String,
     #[serde(with = "ts_seconds")]
     pub start_time: DateTime<Utc>,
     pub teams: Vec<TournamentTeam>,
@@ -102,5 +125,5 @@ pub struct TournamentTeamMember {
     pub in_game_name: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Copy, Clone, Debug, Deserialize)]
 pub struct TournamentTeamCheckIn {}

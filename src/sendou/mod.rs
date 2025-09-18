@@ -4,12 +4,14 @@ mod types;
 use crate::cli_helpers::{TrieHinter, print_seeding_instructions};
 use crate::db::{Database, SwitzerlandPlayer, SwitzerlandPlayerMap};
 use crate::sendou::schema::{
-    TournamentContext, TournamentRoot, TournamentStageSettings, TournamentStageSwissSettings,
+    SendouId, TournamentContext, TournamentData, TournamentMatchResult, TournamentRoot,
+    TournamentStageSettings, TournamentStageSwissSettings,
 };
 use crate::sendou::types::{DiscordChannelsMap, GetTournamentFn, TeamsMap};
 use crate::{Error, Result, format_player_rank_summary, summarize_differences};
 use ansi_term::Color;
 use chrono::Utc;
+use itertools::Itertools;
 use reqwest::Url;
 use rustyline::Editor;
 use rustyline::history::DefaultHistory;
@@ -18,7 +20,7 @@ use serenity::all::{
     HttpBuilder, Mentionable, PartialGuild, PermissionOverwrite, PermissionOverwriteType,
     Permissions,
 };
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 use std::fs;
 use std::io::Read;
@@ -92,7 +94,14 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
     let discord_channels =
         create_discord_channels(&http, &chat_guild, chat_category.id, &get_tournament).await?;
 
-    run_tournament(&new_players, &teams, swiss_settings, &discord_channels).await?;
+    run_tournament(
+        &new_players,
+        &teams,
+        swiss_settings,
+        &discord_channels,
+        &get_tournament,
+    )
+    .await?;
 
     let new_db = finalize_tournament(out_db, &old_players, new_players)?;
     send_summary_to_discord(
@@ -102,6 +111,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         &old_players,
         teams,
         new_db,
+        &get_tournament,
     )
     .await?;
 
@@ -293,6 +303,7 @@ async fn run_tournament(
     teams: &TeamsMap<'_>,
     swiss_settings: TournamentStageSwissSettings,
     discord_channels: &DiscordChannelsMap,
+    get_tournament: &impl GetTournamentFn,
 ) -> Result<()> {
     Ok(())
 }
@@ -318,32 +329,82 @@ async fn send_summary_to_discord(
     old_players: &SwitzerlandPlayerMap,
     teams: TeamsMap<'_>,
     new_db: Database,
+    get_tournament: &impl GetTournamentFn,
 ) -> Result<()> {
     println!("\nSending comparison to Discord...");
-
-    let mut message = "## Switzerland Power changes\n".to_string();
+    let tournament = get_tournament().await?;
     let player_name_to_discord_id = teams
         .into_values()
+        .filter(|(team, _)| !team.check_ins.is_empty())
         .map(|(team, name)| (name, team.members.first().unwrap().discord_id))
         .collect::<HashMap<_, _>>();
 
+    let mut players_in_discord = HashSet::new();
+    for user_id in player_name_to_discord_id.values().copied() {
+        if chat_guild.member(&http, user_id).await.is_ok() {
+            players_in_discord.insert(user_id);
+        }
+    }
+
+    let mut message = String::new();
+    let _ = writeln!(
+        message,
+        "And that concludes {}! Thank you all for participating, and I hope you had a good time.",
+        tournament.context.name
+    );
+
+    let mut print_results = |title, results: &[SendouId; 3]| {
+        let _ = writeln!(message, "## {title}");
+        for (team_id, emoji) in results.iter().zip(['🥇', '🥈', '🥉']) {
+            let player = tournament
+                .context
+                .teams
+                .iter()
+                .find(|x| x.id == *team_id)
+                .unwrap()
+                .members
+                .first()
+                .unwrap();
+            let _ = writeln!(
+                message,
+                "- {emoji} {}{}",
+                player.username,
+                if players_in_discord.contains(&player.discord_id) {
+                    format!(" ({})", player.discord_id.mention())
+                } else {
+                    "".to_string()
+                },
+            );
+        }
+    };
+    match &compute_results(&tournament.data)[..] {
+        [] => {}
+        [(_, results)] => print_results("Results".to_string(), results),
+        all_results => {
+            for (bracket, results) in all_results {
+                print_results(format!("{bracket} results"), results);
+            }
+        }
+    }
+
+    let _ = writeln!(message, "## Switzerland Power changes");
     for new_player in new_db.players {
         let Some(discord_id) = player_name_to_discord_id.get(&new_player.name) else {
             continue;
         };
+        if !players_in_discord.contains(discord_id) {
+            continue;
+        }
         let old_result = old_players.get(&new_player.name);
         if let Some(old_result) = old_result
             && old_result.rating == new_player.rating
         {
             continue;
         }
-        let Ok(member) = chat_guild.member(&http, discord_id).await else {
-            continue;
-        };
         let _ = writeln!(
             message,
             "- {} {}",
-            member.mention(),
+            discord_id.mention(),
             format_player_rank_summary(old_result, &new_player, true)
         );
     }
@@ -356,6 +417,60 @@ async fn send_summary_to_discord(
 
     println!("Sent!");
     Ok(())
+}
+
+fn compute_results(tournament_data: &TournamentData) -> Vec<(&str, [SendouId; 3])> {
+    let compute_results_for_stage = |stage_id| {
+        let (main_group, third_place_group) = tournament_data
+            .groups
+            .iter()
+            .filter(|x| x.stage_id == stage_id)
+            .sorted_by_key(|x| x.number)
+            .map(|x| x.id)
+            .next_tuple()?;
+        let finals_round = tournament_data
+            .rounds
+            .iter()
+            .filter(|x| x.group_id == main_group)
+            .max_by_key(|x| x.number)?
+            .id;
+        let third_place_round = tournament_data
+            .rounds
+            .iter()
+            .find(|x| x.group_id == third_place_group)?
+            .id;
+        let finals_match = tournament_data
+            .matches
+            .iter()
+            .find(|x| x.round_id == finals_round)?;
+        let third_place_match = tournament_data
+            .matches
+            .iter()
+            .find(|x| x.round_id == third_place_round)?;
+        Some([
+            itertools::chain(finals_match.opponent1, finals_match.opponent2)
+                .find(|x| x.result == Some(TournamentMatchResult::Win))?
+                .id,
+            itertools::chain(finals_match.opponent1, finals_match.opponent2)
+                .find(|x| x.result == Some(TournamentMatchResult::Loss))?
+                .id,
+            itertools::chain(third_place_match.opponent1, third_place_match.opponent2)
+                .find(|x| x.result == Some(TournamentMatchResult::Win))?
+                .id,
+        ])
+    };
+    tournament_data
+        .stages
+        .iter()
+        .filter(|x| {
+            matches!(
+                x.settings,
+                TournamentStageSettings::SingleElimination { .. }
+            )
+        })
+        .sorted_by_key(|x| x.number)
+        .filter_map(|stage| Some((stage.name.as_str(), compute_results_for_stage(stage.id)?)))
+        .collect()
 }
 
 async fn clean_up_discord_channels(
