@@ -1,8 +1,11 @@
 mod schema;
 
 use crate::cli_helpers::{TrieHinter, print_seeding_instructions};
-use crate::db::{Database, SwitzerlandPlayer};
-use crate::sendou::schema::{TournamentRoot, TournamentStageSettings};
+use crate::db::{Database, SwitzerlandPlayer, SwitzerlandPlayerMap};
+use crate::sendou::schema::{
+    SendouId, Tournament, TournamentContext, TournamentRoot, TournamentStageSettings,
+    TournamentStageSwissSettings, TournamentTeam,
+};
 use crate::{Error, Result, format_player_rank_summary, summarize_differences};
 use ansi_term::Color;
 use chrono::Utc;
@@ -10,7 +13,8 @@ use reqwest::Url;
 use rustyline::Editor;
 use rustyline::history::DefaultHistory;
 use serenity::all::{
-    Builder, Channel, ChannelId, ChannelType, CreateMessage, HttpBuilder, Mentionable,
+    Builder, Channel, ChannelId, ChannelType, CreateMessage, Http, HttpBuilder, Mentionable,
+    PartialGuild,
 };
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -63,9 +67,8 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         Channel::Guild(category) => category,
         _ => return Err(Error::Custom("Your Discord channel is weird".to_string())),
     };
-    let chat_guild = chat_category.guild_id.to_partial_guild(&http).await?;
-
     let moderator_channel = env::<ChannelId>("DISCORD_MODERATOR_CHANNEL_ID")?;
+    let chat_guild = chat_category.guild_id.to_partial_guild(&http).await?;
 
     let get_tournament = async || -> Result<_> {
         Ok(client
@@ -76,25 +79,64 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
             .await?
             .tournament)
     };
-    let base_tournament = get_tournament().await?.context;
+    let tournament_context = get_tournament().await?.context;
 
-    let mut rl = Editor::<TrieHinter, DefaultHistory>::new()?;
     let old_players = Database::read(in_db)?.into_map();
     let mut new_players = old_players.clone();
 
+    let teams = initialize_teams(&tournament_context, &old_players, &mut new_players)?;
+    let swiss = wait_for_tournament_start(&tournament_context, &get_tournament).await?;
+
+    // TODO: Main part
+
+    let new_db = finalize_tournament(out_db, &old_players, new_players)?;
+    send_summary_to_discord(
+        &http,
+        &chat_guild,
+        moderator_channel,
+        &old_players,
+        teams,
+        new_db,
+    )
+    .await?;
+
+    Ok(())
+}
+
+fn env_str(var: &str) -> Result<String> {
+    dotenvy::var(var).map_err(|_| Error::MissingEnv(var.to_string()))
+}
+
+fn env<T: FromStr>(var: &str) -> Result<T>
+where
+    <T as FromStr>::Err: std::error::Error + 'static,
+{
+    env_str(var)?
+        .parse()
+        .map_err(|e| Error::InvalidEnv(var.to_string(), Box::new(e)))
+}
+
+type TeamsMap<'a> = HashMap<SendouId, (&'a TournamentTeam, String)>;
+
+fn initialize_teams<'a>(
+    tournament_context: &'a TournamentContext,
+    old_players: &SwitzerlandPlayerMap,
+    new_players: &mut SwitzerlandPlayerMap,
+) -> Result<TeamsMap<'a>> {
+    let mut rl = Editor::<TrieHinter, DefaultHistory>::new()?;
     let mut teams = HashMap::new();
     println!(
         "{}",
         Color::Green.paint(format!(
             "Found {} players. Please enter their seeding names as requested.",
-            base_tournament.teams.len()
+            tournament_context.teams.len()
         ))
     );
     rl.set_helper(Some(TrieHinter {
         trie: Trie::from_iter(old_players.keys()),
         enabled: true,
     }));
-    for team in &base_tournament.teams {
+    for team in &tournament_context.teams {
         let player = team.members.first().expect("Sendou team has no members");
         println!("Team:       {}", team.name);
         println!("IGN:        {}", player.in_game_name);
@@ -124,7 +166,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         println!();
     }
 
-    print_seeding_instructions(&old_players, teams.values(), |team, player| {
+    print_seeding_instructions(old_players, teams.values(), |team, player| {
         format!(
             "{} ({}) [{} @ {:.1} SP]",
             team.name,
@@ -134,7 +176,14 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         )
     });
 
-    if let Ok(delay) = base_tournament
+    Ok(teams)
+}
+
+async fn wait_for_tournament_start(
+    tournament_context: &TournamentContext,
+    get_tournament: &impl AsyncFn() -> Result<Tournament>,
+) -> Result<TournamentStageSwissSettings> {
+    if let Ok(delay) = tournament_context
         .start_time
         .signed_duration_since(Utc::now())
         .to_std()
@@ -142,15 +191,15 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         sleep(delay).await;
     }
 
-    let round_count = loop {
+    let swiss = loop {
         let round_count = get_tournament()
             .await?
             .data
             .stages
             .iter()
             .filter_map(|x| {
-                if let TournamentStageSettings::Swiss { swiss } = &x.settings {
-                    Some(swiss.round_count)
+                if let TournamentStageSettings::Swiss { swiss } = x.settings {
+                    Some(swiss)
                 } else {
                     None
                 }
@@ -162,61 +211,66 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         sleep(Duration::from_secs(30)).await;
     };
 
-    // TODO: Main part
+    Ok(swiss)
+}
 
+fn finalize_tournament(
+    out_db: &Path,
+    old_players: &SwitzerlandPlayerMap,
+    new_players: SwitzerlandPlayerMap,
+) -> Result<Database> {
     let new_db = Database::new_from_map(new_players);
     new_db.write(out_db)?;
 
     println!("SP comparison (switzerland-power-calc compare):");
-    summarize_differences(&old_players, &new_db.players);
+    summarize_differences(old_players, &new_db.players);
 
+    Ok(new_db)
+}
+
+async fn send_summary_to_discord(
+    http: &Http,
+    chat_guild: &PartialGuild,
+    moderator_channel: ChannelId,
+    old_players: &SwitzerlandPlayerMap,
+    teams: TeamsMap<'_>,
+    new_db: Database,
+) -> Result<()> {
     println!("\nSending comparison to Discord...");
-    {
-        let mut message = "## Switzerland Power changes\n".to_string();
-        let player_name_to_discord_id = teams
-            .into_values()
-            .map(|(team, name)| (name, team.members.first().unwrap().discord_id))
-            .collect::<HashMap<_, _>>();
-        for new_player in &new_db.players {
-            let Some(discord_id) = player_name_to_discord_id.get(&new_player.name) else {
-                continue;
-            };
-            let old_result = old_players.get(&new_player.name);
-            if let Some(old_result) = old_result
-                && old_result.rating == new_player.rating
-            {
-                continue;
-            }
-            let Ok(member) = chat_guild.member(&http, discord_id).await else {
-                continue;
-            };
-            let _ = writeln!(
-                message,
-                "- {} {}",
-                member.mention(),
-                format_player_rank_summary(old_result, new_player, true)
-            );
+
+    let mut message = "## Switzerland Power changes\n".to_string();
+    let player_name_to_discord_id = teams
+        .into_values()
+        .map(|(team, name)| (name, team.members.first().unwrap().discord_id))
+        .collect::<HashMap<_, _>>();
+
+    for new_player in new_db.players {
+        let Some(discord_id) = player_name_to_discord_id.get(&new_player.name) else {
+            continue;
+        };
+        let old_result = old_players.get(&new_player.name);
+        if let Some(old_result) = old_result
+            && old_result.rating == new_player.rating
+        {
+            continue;
         }
-        message.truncate(message.len() - 1); // Remove trailing \n
-        CreateMessage::new()
-            .content(message)
-            .execute(&http, (moderator_channel, None))
-            .await?;
+        let Ok(member) = chat_guild.member(&http, discord_id).await else {
+            continue;
+        };
+        let _ = writeln!(
+            message,
+            "- {} {}",
+            member.mention(),
+            format_player_rank_summary(old_result, &new_player, true)
+        );
     }
+
+    message.truncate(message.len() - 1); // Remove trailing \n
+    CreateMessage::new()
+        .content(message)
+        .execute(http, (moderator_channel, None))
+        .await?;
+
     println!("Sent!");
-
     Ok(())
-}
-
-fn env_str(var: &str) -> Result<String> {
-    dotenvy::var(var).map_err(|_| Error::MissingEnv(var.to_string()))
-}
-
-fn env<T: FromStr>(var: &str) -> Result<T>
-where
-    <T as FromStr>::Err: std::error::Error + 'static,
-{
-    env_str(var)?
-        .parse()
-        .map_err(|e| Error::InvalidEnv(var.to_string(), Box::new(e)))
 }
