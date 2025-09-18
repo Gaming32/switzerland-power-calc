@@ -90,6 +90,7 @@ pub struct TournamentTeam {
     pub id: SendouId,
     pub name: String,
     pub members: Vec<TournamentTeamMember>,
+    pub check_ins: Vec<TournamentTeamCheckIn>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -100,3 +101,6 @@ pub struct TournamentTeamMember {
     pub custom_url: Option<String>,
     pub in_game_name: String,
 }
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct TournamentTeamCheckIn {}
