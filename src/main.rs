@@ -142,7 +142,10 @@ pub fn print_player_simply(
     new_player: &SwitzerlandPlayer,
     show_rank: bool,
 ) {
-    println!("{}", format_player_simply(old_player, new_player, show_rank));
+    println!(
+        "{}",
+        format_player_simply(old_player, new_player, show_rank)
+    );
 }
 
 pub fn format_player_simply(

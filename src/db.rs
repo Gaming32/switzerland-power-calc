@@ -33,13 +33,6 @@ impl SwitzerlandPlayer {
     pub fn descending_rating_order_cmp(&self, other: &Self) -> Ordering {
         other.rating.rating.total_cmp(&self.rating.rating)
     }
-
-    pub fn without_rank(self) -> Self {
-        Self {
-            rank: None,
-            ..self
-        }
-    }
 }
 
 impl Database {

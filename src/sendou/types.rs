@@ -1,9 +1,9 @@
-use std::cmp::Ordering;
 use crate::Result;
 use crate::sendou::schema::{SendouId, Tournament, TournamentTeam};
 use serenity::all::GuildChannel;
-use std::collections::HashMap;
 use skillratings::glicko2::Glicko2Rating;
+use std::cmp::Ordering;
+use std::collections::HashMap;
 
 pub type TeamsMap<'a> = HashMap<SendouId, (&'a TournamentTeam, String)>;
 
@@ -21,8 +21,7 @@ impl PartialEq for DescendingRatingGlicko2 {
     }
 }
 
-impl Eq for DescendingRatingGlicko2 {
-}
+impl Eq for DescendingRatingGlicko2 {}
 
 impl PartialOrd for DescendingRatingGlicko2 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {

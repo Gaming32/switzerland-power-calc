@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_repr::Deserialize_repr;
-use serde_with::{serde_as, BoolFromInt};
+use serde_with::{BoolFromInt, serde_as};
 
 pub type SendouId = u32;
 
