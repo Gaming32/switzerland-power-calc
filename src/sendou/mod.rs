@@ -266,12 +266,11 @@ async fn create_discord_channels(
                                 deny: Permissions::empty(),
                                 kind: PermissionOverwriteType::Member(me_user.id),
                             },
-                            // TODO: Uncomment this when done testing
-                            // PermissionOverwrite {
-                            //     allow: Permissions::VIEW_CHANNEL,
-                            //     deny: Permissions::empty(),
-                            //     kind: PermissionOverwriteType::Member(user.id),
-                            // },
+                            PermissionOverwrite {
+                                allow: Permissions::VIEW_CHANNEL,
+                                deny: Permissions::empty(),
+                                kind: PermissionOverwriteType::Member(user.id),
+                            },
                             PermissionOverwrite {
                                 allow: Permissions::empty(),
                                 deny: Permissions::VIEW_CHANNEL | Permissions::SEND_MESSAGES,
