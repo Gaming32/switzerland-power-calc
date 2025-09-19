@@ -30,8 +30,15 @@ impl SwitzerlandPlayer {
             .get()
     }
 
-    pub fn descending_rank_order_cmp(&self, other: &Self) -> Ordering {
+    pub fn descending_rating_order_cmp(&self, other: &Self) -> Ordering {
         other.rating.rating.total_cmp(&self.rating.rating)
+    }
+
+    pub fn without_rank(self) -> Self {
+        Self {
+            rank: None,
+            ..self
+        }
     }
 }
 
@@ -41,12 +48,11 @@ impl Database {
     }
 
     pub fn new_from_map(map: SwitzerlandPlayerMap) -> Self {
-        let default_rating = Glicko2Rating::default();
         let mut result = Self {
             players: map
                 .into_iter()
                 .map(|(_, v)| v)
-                .filter(|x| x.rating != default_rating)
+                .filter(|x| x.rating != const { Glicko2Rating::new() })
                 .collect(),
         };
         result.sort();
@@ -55,7 +61,7 @@ impl Database {
 
     pub fn sort(&mut self) {
         self.players
-            .sort_by(SwitzerlandPlayer::descending_rank_order_cmp);
+            .sort_by(SwitzerlandPlayer::descending_rating_order_cmp);
         self.init_rank();
     }
 

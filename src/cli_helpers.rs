@@ -83,7 +83,7 @@ pub fn print_seeding_instructions<'a, Team, Ref, Iter, Format>(
         .into_iter()
         .map(IntoABRef::into_ab_ref)
         .filter_map(|(team, name)| old_players.get(name).map(|x| (team, x)))
-        .sorted_by(|(_, p1), (_, p2)| p1.descending_rank_order_cmp(p2))
+        .sorted_by(|(_, p1), (_, p2)| p1.descending_rating_order_cmp(p2))
         .collect_vec();
     if sorted_teams.is_empty() {
         return;

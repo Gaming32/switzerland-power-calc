@@ -1,7 +1,7 @@
-use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_repr::Deserialize_repr;
+use serde_with::{serde_as, BoolFromInt};
 
 pub type SendouId = u32;
 
@@ -44,13 +44,7 @@ pub enum TournamentStageSettings {
     SingleElimination {},
     DoubleElimination {},
     RoundRobin {},
-    Swiss { swiss: TournamentStageSwissSettings },
-}
-
-#[derive(Copy, Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TournamentStageSwissSettings {
-    pub round_count: u32,
+    Swiss {},
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
@@ -65,10 +59,12 @@ pub struct TournamentRound {
     pub id: SendouId,
     pub group_id: SendouId,
     pub number: u32,
+    pub stage_id: SendouId,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub struct TournamentMatch {
+    pub id: SendouId,
     pub opponent1: Option<TournamentMatchOpponent>,
     pub opponent2: Option<TournamentMatchOpponent>,
     pub round_id: SendouId,
@@ -98,12 +94,16 @@ pub enum TournamentMatchStatus {
     Completed = 4,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TournamentContext {
+    pub id: SendouId,
     pub name: String,
-    #[serde(with = "ts_seconds")]
+    #[serde(with = "chrono::serde::ts_seconds")]
     pub start_time: DateTime<Utc>,
+    #[serde_as(as = "BoolFromInt")]
+    pub is_finalized: bool,
     pub teams: Vec<TournamentTeam>,
 }
 

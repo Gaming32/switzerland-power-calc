@@ -14,7 +14,7 @@ pub enum Error {
     #[error("Missing environment variable {0}")]
     MissingEnv(String),
     #[error("Invalid environment variable {0}: {1}")]
-    InvalidEnv(String, #[source] Box<dyn std::error::Error>),
+    InvalidEnv(String, #[source] Box<dyn std::error::Error + Send>),
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("URL parsing error: {0}")]
