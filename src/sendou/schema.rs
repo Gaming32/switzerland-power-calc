@@ -73,7 +73,7 @@ pub struct TournamentMatch {
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub struct TournamentMatchOpponent {
-    pub id: SendouId,
+    pub id: Option<SendouId>,
     pub result: Option<TournamentMatchResult>,
 }
 

@@ -305,44 +305,61 @@ async fn run_tournament(
     discord_channels: &DiscordChannelsMap,
     get_tournament: &impl GetTournamentFn,
 ) -> Result<()> {
-    enum Command {
-        Help,
+    enum Action {
+        Poll,
         SkipMatch(SendouId),
-        Invalid(String),
         Error(Error),
     }
-    let (command_send, mut command_recv) = tokio::sync::mpsc::unbounded_channel();
+    let (action_send, mut action_recv) = tokio::sync::mpsc::unbounded_channel();
     let mut rl = DefaultEditor::new()?;
     let mut printer = rl.create_external_printer()?;
     std::thread::spawn(move || {
         let mut run = || -> Result<()> {
             loop {
                 let line = rl.readline("command> ")?;
-                let command = if line == "help" || line == "?" {
-                    Command::Help
+                let action = if line == "help" || line == "?" {
+                    println!("help");
+                    println!("   Prints this message");
+                    println!("?");
+                    println!("   Prints this message");
+                    println!("skip <match-id>");
+                    println!("   Ignores the specified match");
+                    println!("poll");
+                    println!("   Forces a recheck of sendou.ink");
+                    None
                 } else if line.starts_with("skip ") {
                     line.strip_prefix("skip ")
                         .unwrap()
                         .parse()
-                        .map_or(Command::Invalid(line), Command::SkipMatch)
+                        .map_or_else(
+                            |err| {
+                                println!("Invalid match ID: {err}");
+                                None
+                            },
+                            |id| {
+                                println!("Ignoring match {id}");
+                                Some(Action::SkipMatch(id))
+                            }
+                        )
+                } else if line == "poll" {
+                    println!("Polling now");
+                    Some(Action::Poll)
                 } else {
-                    Command::Invalid(line)
+                    println!("Unknown or invalid command: {command}");
+                    println!("Type 'help' or '?' to see a list of commands");
+                    None
                 };
-                if command_send.send(command).is_err() {
+                if let Some(action) = action && action_send.send(action).is_err() {
                     break;
                 }
             }
             Ok(())
         };
         if let Err(err) = run() {
-            let _ = command_send.send(Command::Error(err));
+            let _ = action_send.send(Action::Error(err));
         }
     });
 
-    enum Action {
-        Continue,
-        Command(Command),
-    }
     macro_rules! rl_print {
         () => { printer.print("".to_string()) };
         ($($args:tt)*) => { printer.print(format!($($args)*)) };
@@ -393,7 +410,7 @@ async fn run_tournament(
                 .position(|x| *x == tourney_match.round_id);
             let get_player = |opponent: &Option<TournamentMatchOpponent>| {
                 teams
-                    .get(&opponent.unwrap().id)
+                    .get(&opponent.unwrap().id.expect("Null opponent in ready match"))
                     .and_then(|(team, player_name)| {
                         Some((team, player_name, new_players.get(player_name)?.rating))
                     })
@@ -445,7 +462,9 @@ async fn run_tournament(
                 },
                 &Glicko2Config::default(),
             );
-            rl_print!("In match {}:", tourney_match.id)?;
+            if new_match {
+                rl_print!("In match {}:", tourney_match.id)?;
+            }
             let mut update_player = async |opponent: Option<TournamentMatchOpponent>,
                                            team: &TournamentTeam,
                                            other_team: &TournamentTeam,
@@ -500,30 +519,16 @@ async fn run_tournament(
 
         loop {
             let action = tokio::select! {
-                _ = sleep(Duration::from_secs(30)) => Action::Continue,
-                command = command_recv.recv() => command.map_or(Action::Continue, Action::Command),
+                _ = sleep(Duration::from_secs(30)) => Action::Poll,
+                action = action_recv.recv() => action.expect("Action input thread exited unexpectedly without Error"),
             };
             match action {
-                Action::Continue => break,
-                Action::Command(command) => match command {
-                    Command::Help => {
-                        rl_print!("help")?;
-                        rl_print!("   Prints this message")?;
-                        rl_print!("?")?;
-                        rl_print!("   Prints this message")?;
-                        rl_print!("skip <match-id>")?;
-                        rl_print!("   Ignores the specified match")?;
-                    }
-                    Command::SkipMatch(id) => {
-                        ignored_matches.insert(id);
-                        rl_print!("Ignored match {id}")?;
-                    }
-                    Command::Invalid(command) => {
-                        rl_print!("Unknown or invalid command: {command}")?;
-                        rl_print!("Type 'help' or '?' to see a list of commands")?;
-                    }
-                    Command::Error(err) => return Err(err),
-                },
+                Action::Poll => break,
+                Action::SkipMatch(id) => {
+                    ignored_matches.insert(id);
+                    break; // Also poll just in case this changed something
+                }
+                Action::Error(err) => return Err(err),
             }
         }
     };
@@ -742,13 +747,16 @@ fn compute_results(tournament_data: &TournamentData) -> Vec<(&str, [SendouId; 3]
         Some([
             itertools::chain(finals_match.opponent1, finals_match.opponent2)
                 .find(|x| x.result == Some(TournamentMatchResult::Win))?
-                .id,
+                .id
+                .unwrap(),
             itertools::chain(finals_match.opponent1, finals_match.opponent2)
                 .find(|x| x.result == Some(TournamentMatchResult::Loss))?
-                .id,
+                .id
+                .unwrap(),
             itertools::chain(third_place_match.opponent1, third_place_match.opponent2)
                 .find(|x| x.result == Some(TournamentMatchResult::Win))?
-                .id,
+                .id
+                .unwrap(),
         ])
     };
     tournament_data
