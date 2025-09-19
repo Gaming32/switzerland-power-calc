@@ -214,7 +214,11 @@ async fn wait_for_tournament_start(
         .signed_duration_since(Utc::now())
         .to_std()
     {
-        println!("Waiting {}m {}s for tournament start time...", delay.as_secs() / 60, delay.as_secs() % 60);
+        println!(
+            "Waiting {}m {}s for tournament start time...",
+            delay.as_secs() / 60,
+            delay.as_secs() % 60
+        );
         sleep(delay).await;
     }
 
@@ -328,28 +332,27 @@ async fn run_tournament(
                     println!("   Forces a recheck of sendou.ink");
                     None
                 } else if line.starts_with("skip ") {
-                    line.strip_prefix("skip ")
-                        .unwrap()
-                        .parse()
-                        .map_or_else(
-                            |err| {
-                                println!("Invalid match ID: {err}");
-                                None
-                            },
-                            |id| {
-                                println!("Ignoring match {id}");
-                                Some(Action::SkipMatch(id))
-                            }
-                        )
+                    line.strip_prefix("skip ").unwrap().parse().map_or_else(
+                        |err| {
+                            println!("Invalid match ID: {err}");
+                            None
+                        },
+                        |id| {
+                            println!("Ignoring match {id}");
+                            Some(Action::SkipMatch(id))
+                        },
+                    )
                 } else if line == "poll" {
                     println!("Polling now");
                     Some(Action::Poll)
                 } else {
-                    println!("Unknown or invalid command: {command}");
+                    println!("Unknown or invalid command: {line}");
                     println!("Type 'help' or '?' to see a list of commands");
                     None
                 };
-                if let Some(action) = action && action_send.send(action).is_err() {
+                if let Some(action) = action
+                    && action_send.send(action).is_err()
+                {
                     break;
                 }
             }
@@ -526,7 +529,6 @@ async fn run_tournament(
                 Action::Poll => break,
                 Action::SkipMatch(id) => {
                     ignored_matches.insert(id);
-                    break; // Also poll just in case this changed something
                 }
                 Action::Error(err) => return Err(err),
             }
