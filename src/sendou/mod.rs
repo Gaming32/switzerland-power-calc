@@ -3,7 +3,7 @@ mod types;
 
 use crate::cli_helpers::{TrieHinter, print_seeding_instructions};
 use crate::db::{Database, SwitzerlandPlayer, SwitzerlandPlayerMap};
-use crate::sendou::schema::{SendouId, TournamentContext, TournamentData, TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus, TournamentRoot, TournamentStageSettings, TournamentTeam};
+use crate::sendou::schema::{SendouId, TournamentContext, TournamentData, TournamentMatch, TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus, TournamentRoot, TournamentStageSettings, TournamentTeam};
 use crate::sendou::types::{DescendingRatingGlicko2, DiscordChannelsMap, GetTournamentFn, TeamsMap};
 use crate::{Error, Result, format_player_rank_summary, format_player_simply, summarize_differences, format_rank_difference};
 use ansi_term::Color;
@@ -13,7 +13,7 @@ use reqwest::Url;
 use rustyline::history::DefaultHistory;
 use rustyline::{DefaultEditor, Editor, ExternalPrinter};
 use serenity::all::{
-    Builder, Channel, ChannelId, ChannelType, CreateChannel, CreateMessage, GuildChannel, Http,
+    Channel, ChannelId, ChannelType, CreateChannel, CreateMessage, GuildChannel, Http,
     HttpBuilder, Mentionable, PartialGuild, PermissionOverwrite, PermissionOverwriteType,
     Permissions,
 };
@@ -28,6 +28,7 @@ use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
 use trie_rs::Trie;
+use unic_emoji_char::{is_emoji, is_emoji_component};
 
 pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Result<()> {
     if let Some(parent) = out_db.parent() {
@@ -117,7 +118,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
 
     println!("Press enter when finished to clean up Discord channels");
     let _ = std::io::stdin().read(&mut [0]);
-    clean_up_discord_channels(&http, discord_channels.into_values()).await?;
+    clean_up_discord_channels(&http, discord_channels.into_values()).await;
 
     Ok(())
 }
@@ -340,6 +341,9 @@ async fn run_tournament(
 
     let mut completed_matches = HashSet::new();
     let mut ignored_matches = HashSet::new();
+    let mut old_ranks = players.values()
+        .filter_map(|x| Some((x.name.clone(), x.rank?.get())))
+        .collect::<HashMap<_, _>>();
     let mut ranked_players = players.values()
         .map(|x| x.rating)
         .filter(|x| *x != const { Glicko2Rating::new() })
@@ -369,17 +373,13 @@ async fn run_tournament(
         let mut new_players = players.clone();
 
         for tourney_match in tournament.data.matches {
-            if tourney_match.status != TournamentMatchStatus::Completed {
-                completed_matches.remove(&tourney_match.id);
-                continue;
-            }
             if ignored_matches.contains(&tourney_match.id) {
                 continue;
             }
+
             let calc_index = swiss_round_ids
                 .iter()
                 .position(|x| *x == tourney_match.round_id);
-            let new_match = completed_matches.insert(tourney_match.id);
             let get_player = |opponent: &Option<TournamentMatchOpponent>| {
                 teams
                     .get(&opponent.unwrap().id)
@@ -388,6 +388,38 @@ async fn run_tournament(
                     })
                     .unwrap()
             };
+            if tourney_match.status == TournamentMatchStatus::Ready && (tourney_match.opponent1.is_none() || tourney_match.opponent2.is_none()) {
+                // BYE
+                if !completed_matches.insert(tourney_match.id) {
+                    continue;
+                }
+                let opponent = tourney_match.opponent1.or(tourney_match.opponent2);
+                let (team, player, rating) = get_player(&opponent);
+                let rank = old_ranks.get(player).copied();
+                send_progress_message_to_player(
+                    http,
+                    original_players,
+                    discord_channels,
+                    &tournament.context,
+                    &tourney_match,
+                    team,
+                    None,
+                    calc_index,
+                    swiss_round_ids.len(),
+                    &player,
+                    opponent.unwrap(),
+                    rating,
+                    rating,
+                    rank,
+                    rank.unwrap_or_default(),
+                ).await?;
+                continue;
+            }
+            if tourney_match.status != TournamentMatchStatus::Completed {
+                completed_matches.remove(&tourney_match.id);
+                continue;
+            }
+            let new_match = completed_matches.insert(tourney_match.id);
             let (team1, player1, rating1) = get_player(&tourney_match.opponent1);
             let (team2, player2, rating2) = get_player(&tourney_match.opponent2);
             let (new_rating1, new_rating2) = glicko2(
@@ -409,43 +441,32 @@ async fn run_tournament(
                     return Ok(());
                 }
 
-                let old_rank = ranked_players.rank(&DescendingRatingGlicko2(old_player.rating)) as u32 + 1;
-                let had_old_rank = ranked_players.remove(&DescendingRatingGlicko2(old_player.rating));
+                ranked_players.remove(&DescendingRatingGlicko2(old_player.rating));
                 let new_rank = ranked_players.rank(&DescendingRatingGlicko2(player.rating)) as u32 + 1;
                 ranked_players.insert(DescendingRatingGlicko2(player.rating));
+                let old_rank = old_ranks.insert(player.name.clone(), new_rank);
 
                 rl_print!(
                     "  {}",
                     format_player_simply(Some(&old_player), player, false)
                 )?;
-                if let Some(discord_channel) = discord_channels.get(&team.id) {
-                    let is_in_calcs = calc_index.is_some() && !original_players.contains_key(&player.name);
-                    let message = if is_in_calcs {
-                        format!("Calculating... {}/{}\n", calc_index.unwrap() + 1, swiss_round_ids.len())
-                    } else {
-                        String::new()
-                    };
-                    if !is_in_calcs || calc_index.unwrap() + 1 == swiss_round_ids.len() {
-                        format!(
-                            "[vs {}](https://sendou.ink/to/{}/matches/{}): {}\n{:.1} SP {:+.1} → {:.1} SP\n{} (estimated)",
-                            other_team.name,
-                            tournament.context.id,
-                            tourney_match.id,
-                            match opponent.unwrap().result.unwrap() {
-                                // I prefer WIN/LOSE personally, but most Western folk are probably more used to VICTORY/DEFEAT
-                                TournamentMatchResult::Win => "VICTORY",
-                                TournamentMatchResult::Loss => "DEFEAT",
-                            },
-                            old_player.rating.rating,
-                            new_rating.rating - old_player.rating.rating,
-                            new_rating.rating,
-                            format_rank_difference(had_old_rank.then_some(old_rank), new_rank),
-                        )
-                    }
-                    discord_channel
-                        .send_message(http, CreateMessage::new().content(message))
-                        .await?;
-                }
+                send_progress_message_to_player(
+                    http,
+                    original_players,
+                    discord_channels,
+                    &tournament.context,
+                    &tourney_match,
+                    team,
+                    Some(other_team),
+                    calc_index,
+                    swiss_round_ids.len(),
+                    &player.name,
+                    opponent.unwrap(),
+                    old_player.rating,
+                    player.rating,
+                    old_rank,
+                    new_rank,
+                ).await?;
                 Ok(())
             };
             update_player(tourney_match.opponent1, team1, team2, player1, new_rating1).await?;
@@ -488,6 +509,71 @@ async fn run_tournament(
 
     *players = new_players;
     Ok(())
+}
+
+async fn send_progress_message_to_player(
+    http: &Http,
+    original_players: &SwitzerlandPlayerMap,
+    discord_channels: &DiscordChannelsMap,
+    tournament_context: &TournamentContext,
+    tourney_match: &TournamentMatch,
+    team: &TournamentTeam,
+    other_team: Option<&TournamentTeam>,
+    calc_index: Option<usize>,
+    swiss_round_count: usize,
+    player_name: &String,
+    my_result: TournamentMatchOpponent,
+    old_rating: Glicko2Rating,
+    new_rating: Glicko2Rating,
+    old_rank: Option<u32>,
+    new_rank: u32,
+) -> Result<()> {
+    let Some(discord_channel) = discord_channels.get(&team.id) else {
+        return Ok(());
+    };
+    let message = if let Some(calc_index) = calc_index && !original_players.contains_key(player_name) {
+        let mut message = format!("Calculating... {}/{}", calc_index + 1, swiss_round_count);
+        if calc_index + 1 == swiss_round_count {
+            let _ = write!(
+                message,
+                "\nCalculated: {:.1} SP\nEstimated rank: #{}",
+                new_rating.rating,
+                new_rank,
+            );
+        }
+        message
+    } else if let Some(other_team) = other_team {
+        // Don't show BYEs (after calcs)
+        format!(
+            "{} {}\nSwitzerland Power: {:.1} SP {:+.1} → {:.1} SP\nEstimated rank: {}",
+            match my_result.result.unwrap() {
+                TournamentMatchResult::Win => "VICTORY",
+                TournamentMatchResult::Loss => "DEFEAT",
+            },
+            format_link(
+                &format!("vs {}", other_team.members.first().unwrap().username),
+                &format!("<https://sendou.ink/to/{}/matches/{}>", tournament_context.id, tourney_match.id),
+            ),
+            old_rating.rating,
+            new_rating.rating - old_rating.rating,
+            new_rating.rating,
+            format_rank_difference(old_rank.unwrap(), new_rank),
+        )
+    } else {
+        return Ok(());
+    };
+    discord_channel
+        .send_message(http, CreateMessage::new().content(message))
+        .await?;
+    Ok(())
+}
+
+fn format_link(body: &str, link: &str) -> String {
+    if !body.chars().any(|x| is_emoji(x) || is_emoji_component(x)) {
+        format!("[{body}]({link})")
+    } else {
+        format!("{body} ({link})")
+    }
 }
 
 fn finalize_tournament(
@@ -653,10 +739,9 @@ fn compute_results(tournament_data: &TournamentData) -> Vec<(&str, [SendouId; 3]
 async fn clean_up_discord_channels(
     http: &Http,
     channels: impl IntoIterator<Item = GuildChannel>,
-) -> Result<()> {
+) {
     println!("Deleting Discord channels...");
     for channel in channels {
-        channel.delete(&http).await?;
+        let _ = channel.delete(&http).await;
     }
-    Ok(())
 }

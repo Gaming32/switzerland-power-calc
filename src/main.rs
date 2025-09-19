@@ -171,7 +171,7 @@ pub fn format_player_rank_summary(
             if show_rank {
                 let old_rank = old_player.unwrap_rank();
                 let new_rank = new_player.unwrap_rank();
-                format!("; {}", format_rank_difference(Some(old_rank), new_rank))
+                format!("; {}", format_rank_difference(old_rank, new_rank))
             } else {
                 "".to_string()
             }
@@ -181,7 +181,7 @@ pub fn format_player_rank_summary(
             "{:.1} SP{}",
             new_player.rating.rating,
             if show_rank {
-                format!("; {}", format_rank_difference(None, new_player.unwrap_rank()))
+                format!("; #{}", new_player.unwrap_rank())
             } else {
                 "".to_string()
             }
@@ -189,14 +189,10 @@ pub fn format_player_rank_summary(
     }
 }
 
-pub fn format_rank_difference(old_rank: Option<u32>, new_rank: u32) -> String {
-    if let Some(old_rank) = old_rank {
-        match new_rank.cmp(&old_rank) {
-            Ordering::Equal => format!("#{new_rank} ⇒"),
-            Ordering::Less => format!("#{old_rank} → #{new_rank} ⇑"),
-            Ordering::Greater => format!("#{old_rank} → #{new_rank} ⇓"),
-        }
-    } else {
-        format!("#{new_rank}")
+pub fn format_rank_difference(old_rank: u32, new_rank: u32) -> String {
+    match new_rank.cmp(&old_rank) {
+        Ordering::Equal => format!("#{new_rank} ⇒"),
+        Ordering::Less => format!("#{old_rank} → #{new_rank} ⇑"),
+        Ordering::Greater => format!("#{old_rank} → #{new_rank} ⇓"),
     }
 }
