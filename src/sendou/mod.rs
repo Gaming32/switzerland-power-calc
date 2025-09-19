@@ -214,9 +214,11 @@ async fn wait_for_tournament_start(
         .signed_duration_since(Utc::now())
         .to_std()
     {
+        println!("Waiting {}m {}s for tournament start time...", delay.as_secs() / 60, delay.as_secs() % 60);
         sleep(delay).await;
     }
 
+    println!("Waiting for tournament to be started...");
     loop {
         if !get_tournament().await?.data.stages.is_empty() {
             break;
@@ -530,7 +532,7 @@ async fn run_tournament(
     Ok(())
 }
 
-// Yeah I'd rather it had fewer too, but I'm not too sure what to do about that
+// Yeah, I'd rather it had fewer too, but I'm not too sure what to do about that
 #[allow(clippy::too_many_arguments)]
 async fn send_progress_message_to_player(
     http: &Http,
