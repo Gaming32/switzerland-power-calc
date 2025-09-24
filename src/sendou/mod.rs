@@ -259,9 +259,12 @@ async fn create_discord_channels(
         let user = player.discord_id.to_user(http).await?;
         let channel_name = format!("switzerland-{}", user.name.replace('.', ""));
         let channel = if let Some(channel) = existing_channels_by_name.remove(&channel_name) {
+            channel.send_message(http, CreateMessage::new().content(
+                "(the bot crashed and needed a restart; you may see some duplicated messages below)"
+            )).await?;
             channel
         } else {
-            chat_guild
+            let channel = chat_guild
                 .create_channel(
                     http,
                     CreateChannel::new(channel_name)
@@ -284,17 +287,18 @@ async fn create_discord_channels(
                             },
                         ]),
                 )
-                .await?
+                .await?;
+            channel
+                .send_message(
+                    http,
+                    CreateMessage::new().content(format!(
+                        "{} in this channel, you will receive live updates for your Switzerland Power throughout the tournament.",
+                        user.mention(),
+                    ))
+                )
+                .await?;
+            channel
         };
-        channel
-            .send_message(
-                http,
-                CreateMessage::new().content(format!(
-                    "{} in this channel, you will receive live updates for your Switzerland Power throughout the tournament.",
-                    user.mention(),
-                ))
-            )
-            .await?;
         channels.insert(team.id, channel);
     }
 
