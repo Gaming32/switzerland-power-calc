@@ -1,12 +1,10 @@
+use crate::cli_helpers::{TrieHinter, print_seeding_instructions};
 use crate::db::{Database, SwitzerlandPlayer};
 use crate::error::Result;
 use crate::{print_player_simply, summarize_differences};
-use ansi_term::{Color, Style};
-use linked_hash_map::LinkedHashMap;
-use rustyline::Completer;
-use rustyline::hint::{Hint, Hinter};
+use ansi_term::Color;
+use rustyline::Editor;
 use rustyline::history::DefaultHistory;
-use rustyline::{Context, Editor, Helper, Highlighter, Validator};
 use skillratings::Outcomes;
 use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2};
 use std::collections::HashMap;
@@ -21,11 +19,7 @@ pub fn tourney_cli(in_db: &Path, out_db: &Path) -> Result<()> {
     }
     let mut rl = Editor::<TrieHinter, DefaultHistory>::new()?;
 
-    let old_players = Database::read(in_db)?
-        .players
-        .into_iter()
-        .map(|x| (x.name.clone(), x))
-        .collect::<LinkedHashMap<_, _>>();
+    let old_players = Database::read(in_db)?.into_map();
     let mut new_players = old_players.clone();
 
     let mut teams = HashMap::<String, String>::new();
@@ -68,6 +62,13 @@ pub fn tourney_cli(in_db: &Path, out_db: &Path) -> Result<()> {
         }
     }
     println!();
+
+    print_seeding_instructions(&old_players, teams.iter(), |team, player| {
+        format!(
+            "{} ({}) @ {:.1} SP",
+            team, player.name, player.rating.rating,
+        )
+    });
 
     println!(
         "{}",
@@ -142,62 +143,11 @@ pub fn tourney_cli(in_db: &Path, out_db: &Path) -> Result<()> {
     }
     println!();
 
-    let mut new_db = Database::new();
-    new_db
-        .players
-        .extend(new_players.into_iter().map(|(_, v)| v));
-    new_db.sort();
+    let new_db = Database::new_from_map(new_players);
     new_db.write(out_db)?;
 
     println!("SP comparison (switzerland-power-calc compare):");
     summarize_differences(&old_players, &new_db.players);
 
     Ok(())
-}
-
-#[derive(Completer, Helper, Validator, Highlighter)]
-struct TrieHinter {
-    trie: Trie<u8>,
-    enabled: bool,
-}
-
-impl Hinter for TrieHinter {
-    type Hint = FormattedHint;
-
-    fn hint(&self, line: &str, pos: usize, ctx: &Context<'_>) -> Option<Self::Hint> {
-        let _ = ctx;
-
-        if !self.enabled || line.is_empty() || pos < line.len() {
-            return None;
-        }
-
-        self.trie
-            .postfix_search(line)
-            .next()
-            .map(FormattedHint::new)
-    }
-}
-
-struct FormattedHint {
-    text: String,
-    formatted: String,
-}
-
-impl FormattedHint {
-    fn new(text: String) -> Self {
-        Self {
-            formatted: Style::new().dimmed().paint(&text).to_string(),
-            text,
-        }
-    }
-}
-
-impl Hint for FormattedHint {
-    fn display(&self) -> &str {
-        &self.formatted
-    }
-
-    fn completion(&self) -> Option<&str> {
-        Some(&self.text)
-    }
 }

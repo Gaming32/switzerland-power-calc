@@ -1,12 +1,15 @@
+mod cli_helpers;
 mod db;
 mod error;
+mod sendou;
 mod tourney;
 
 use crate::db::SwitzerlandPlayer;
+use crate::sendou::sendou_cli;
 use crate::tourney::tourney_cli;
 use clap::Parser;
-use error::Result;
-use linked_hash_map::LinkedHashMap;
+use error::{Error, Result};
+use hashlink::LinkedHashMap;
 use std::cmp::Ordering;
 use std::path::PathBuf;
 use std::process::exit;
@@ -49,6 +52,15 @@ enum Commands {
         in_db: PathBuf,
         /// The path to the database to create as a result
         out_db: PathBuf,
+    },
+    /// Automatically process a tournament being run on sendou.ink
+    Sendou {
+        /// The path to the input database
+        in_db: PathBuf,
+        /// The path to the database to create as a result
+        out_db: PathBuf,
+        /// The URL to the tournament on sendou.ink
+        tournament_url: String,
     },
 }
 
@@ -97,6 +109,15 @@ fn run(args: Args) -> Result<()> {
             summarize_differences(&old_results, &new_results);
         }
         Tourney { in_db, out_db } => tourney_cli(&in_db, &out_db)?,
+        Sendou {
+            in_db,
+            out_db,
+            tournament_url,
+        } => tokio::runtime::Runtime::new()?.block_on(sendou_cli(
+            &in_db,
+            &out_db,
+            &tournament_url,
+        ))?,
     }
     Ok(())
 }
@@ -116,40 +137,65 @@ pub fn summarize_differences(
     }
 }
 
-fn print_player_simply(
+pub fn print_player_simply(
     old_player: Option<&SwitzerlandPlayer>,
     new_player: &SwitzerlandPlayer,
     show_rank: bool,
 ) {
+    println!(
+        "{}",
+        format_player_simply(old_player, new_player, show_rank)
+    );
+}
+
+pub fn format_player_simply(
+    old_player: Option<&SwitzerlandPlayer>,
+    new_player: &SwitzerlandPlayer,
+    show_rank: bool,
+) -> String {
+    format!(
+        "- {}: {}",
+        new_player.name,
+        format_player_rank_summary(old_player, new_player, show_rank)
+    )
+}
+
+pub fn format_player_rank_summary(
+    old_player: Option<&SwitzerlandPlayer>,
+    new_player: &SwitzerlandPlayer,
+    show_rank: bool,
+) -> String {
     if let Some(old_player) = old_player {
-        println!(
-            "- {}: {:.1} SP -> {:.1} SP ({:+.1}){}",
-            new_player.name,
+        format!(
+            "{:.1} SP → {:.1} SP ({:+.1}){}",
             old_player.rating.rating,
             new_player.rating.rating,
             new_player.rating.rating - old_player.rating.rating,
             if show_rank {
                 let old_rank = old_player.unwrap_rank();
                 let new_rank = new_player.unwrap_rank();
-                match new_rank.cmp(&old_rank) {
-                    Ordering::Equal => format!("; #{new_rank} =>"),
-                    Ordering::Less => format!("; #{old_rank} -> #{new_rank} ⇑"),
-                    Ordering::Greater => format!("; #{old_rank} -> #{new_rank} ⇓"),
-                }
+                format!("; {}", format_rank_difference(old_rank, new_rank))
             } else {
                 "".to_string()
             }
-        );
+        )
     } else {
-        println!(
-            "- {}: {:.1} SP{}",
-            new_player.name,
+        format!(
+            "{:.1} SP{}",
             new_player.rating.rating,
             if show_rank {
                 format!("; #{}", new_player.unwrap_rank())
             } else {
                 "".to_string()
             }
-        );
+        )
+    }
+}
+
+pub fn format_rank_difference(old_rank: u32, new_rank: u32) -> String {
+    match new_rank.cmp(&old_rank) {
+        Ordering::Equal => format!("#{new_rank} ⇒"),
+        Ordering::Less => format!("#{old_rank} → #{new_rank} ⇑"),
+        Ordering::Greater => format!("#{old_rank} → #{new_rank} ⇓"),
     }
 }

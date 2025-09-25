@@ -1,9 +1,13 @@
 use crate::error::Result;
+use hashlink::LinkedHashMap;
 use serde::{Deserialize, Serialize};
 use skillratings::glicko2::Glicko2Rating;
+use std::cmp::Ordering;
 use std::fs;
 use std::num::NonZeroU32;
 use std::path::Path;
+
+pub type SwitzerlandPlayerMap = LinkedHashMap<String, SwitzerlandPlayer>;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Database {
@@ -25,6 +29,10 @@ impl SwitzerlandPlayer {
             .expect("unwrap_rank() called on uninitialized rank")
             .get()
     }
+
+    pub fn descending_rating_order_cmp(&self, other: &Self) -> Ordering {
+        other.rating.rating.total_cmp(&self.rating.rating)
+    }
 }
 
 impl Database {
@@ -32,9 +40,21 @@ impl Database {
         Self { players: vec![] }
     }
 
+    pub fn new_from_map(map: SwitzerlandPlayerMap) -> Self {
+        let mut result = Self {
+            players: map
+                .into_iter()
+                .map(|(_, v)| v)
+                .filter(|x| x.rating != const { Glicko2Rating::new() })
+                .collect(),
+        };
+        result.sort();
+        result
+    }
+
     pub fn sort(&mut self) {
         self.players
-            .sort_by(|p1, p2| p2.rating.rating.total_cmp(&p1.rating.rating));
+            .sort_by(SwitzerlandPlayer::descending_rating_order_cmp);
         self.init_rank();
     }
 
@@ -46,8 +66,15 @@ impl Database {
 
     pub fn read(file: &Path) -> Result<Self> {
         let mut result: Database = serde_cbor::from_reader(fs::File::open(file)?)?;
-        result.init_rank();
+        result.sort();
         Ok(result)
+    }
+
+    pub fn into_map(self) -> SwitzerlandPlayerMap {
+        self.players
+            .into_iter()
+            .map(|x| (x.name.clone(), x))
+            .collect()
     }
 
     pub fn write(&self, file: &Path) -> Result<()> {
