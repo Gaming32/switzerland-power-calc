@@ -8,7 +8,7 @@ clap = { version = "4.5.41", features = ["derive"] }
 skillratings = { version = "0.27.1", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_cbor = "0.11.2"
-thiserror = "2.0.12"
+thiserror.workspace = true
 rustyline = { version = "16.0.0", default-features = false, features = ["derive"] }
 strsim = "0.11.1"
 trie-rs = "0.4.2"
@@ -17,7 +17,7 @@ ansi_term = "0.12.1"
 totally-ordered = "0.2.0"
 itertools = "0.14.0"
 
-tokio = { version = "1.47.1", features = ["rt-multi-thread"] }
+tokio.workspace = true
 reqwest = { version = "0.11.27", features = ["json"] }
 url = "2.5.7"
 dotenvy = "0.15.7"

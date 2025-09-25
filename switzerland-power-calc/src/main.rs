@@ -113,11 +113,7 @@ fn run(args: Args) -> Result<()> {
             in_db,
             out_db,
             tournament_url,
-        } => tokio::runtime::Runtime::new()?.block_on(sendou_cli(
-            &in_db,
-            &out_db,
-            &tournament_url,
-        ))?,
+        } => sendou_cli(&in_db, &out_db, &tournament_url)?,
     }
     Ok(())
 }
