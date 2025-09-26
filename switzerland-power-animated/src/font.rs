@@ -8,7 +8,12 @@ pub(crate) struct FontPair<'ttf> {
 }
 
 impl<'ttf> FontPair<'ttf> {
-    pub fn load(context: &'ttf Sdl2TtfContext, main: &'static [u8], fallback: &'static [u8], point_size: u16) -> Result<Self> {
+    pub fn load(
+        context: &'ttf Sdl2TtfContext,
+        main: &'static [u8],
+        fallback: &'static [u8],
+        point_size: u16,
+    ) -> Result<Self> {
         Ok(Self {
             main: context.load_font_from_rwops(RWops::from_bytes(main)?, point_size)?,
             fallback: context.load_font_from_rwops(RWops::from_bytes(fallback)?, point_size)?,

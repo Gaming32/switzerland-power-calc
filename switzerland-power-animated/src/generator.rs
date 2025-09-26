@@ -1,12 +1,12 @@
-use crate::font::FontPair;
 use crate::PowerStatus;
 use crate::Result;
+use crate::font::FontPair;
+use sdl2::Sdl;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
 use sdl2::render::SurfaceCanvas;
 use sdl2::surface::Surface;
 use sdl2::ttf::Sdl2TtfContext;
-use sdl2::Sdl;
 use std::cell::RefCell;
 use webp::{AnimEncoder, AnimFrame, WebPConfig, WebPMemory};
 
@@ -83,7 +83,9 @@ impl FrameGenerator {
 
     fn generate_frames(&mut self, status: PowerStatus) -> Result<FramesVec> {
         match status {
-            PowerStatus::Calculating { progress, total } => self.generate_calculating(progress, total)?,
+            PowerStatus::Calculating { progress, total } => {
+                self.generate_calculating(progress, total)?
+            }
             _ => todo!("Implement other statuses"),
         }
 
@@ -94,7 +96,10 @@ impl FrameGenerator {
         self.canvas.set_draw_color((0, 0, 0, 0));
         self.canvas.fill_rect(None)?;
 
-        let text = self.bold_font.main.render_latin1(progress.to_string().as_bytes())
+        let text = self
+            .bold_font
+            .main
+            .render_latin1(progress.to_string().as_bytes())
             .blended(Color::WHITE)
             .unwrap();
         text.blit_scaled(
@@ -108,7 +113,10 @@ impl FrameGenerator {
             ),
         )?;
 
-        let text = self.bold_font.main.render_latin1(format!("/{total}").as_bytes())
+        let text = self
+            .bold_font
+            .main
+            .render_latin1(format!("/{total}").as_bytes())
             .blended(Color::WHITE)
             .unwrap();
         text.blit_scaled(
@@ -127,7 +135,10 @@ impl FrameGenerator {
     }
 
     fn push_frame(&mut self, duration_frames: u32) {
-        self.frames.push((self.canvas.surface().without_lock().unwrap().into(), duration_frames));
+        self.frames.push((
+            self.canvas.surface().without_lock().unwrap().into(),
+            duration_frames,
+        ));
     }
 }
 
