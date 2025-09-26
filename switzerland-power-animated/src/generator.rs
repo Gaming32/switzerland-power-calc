@@ -12,7 +12,7 @@ use webp::{AnimEncoder, AnimFrame, WebPConfig, WebPMemory};
 
 const WIDTH: u32 = 1350;
 const HEIGHT: u32 = 800;
-const FPS: i32 = 30;
+const FPS: u32 = 30;
 
 pub struct AnimationGenerator {
     generator: RefCell<FrameGenerator>,
@@ -36,10 +36,12 @@ impl AnimationGenerator {
             .unwrap()
     }
 
-    fn generate_frames(&self, status: PowerStatus) -> Result<Vec<Vec<u8>>> {
+    fn generate_frames(&self, status: PowerStatus) -> Result<FramesVec> {
         self.generator.borrow_mut().generate_frames(status)
     }
 }
+
+type FramesVec = Vec<(Vec<u8>, u32)>;
 
 struct FrameGenerator {
     canvas: SurfaceCanvas<'static>,
@@ -48,7 +50,7 @@ struct FrameGenerator {
     bold_font: FontPair<'static>,
     sdl_ttf: Sdl2TtfContext,
 
-    frames: Vec<Vec<u8>>,
+    frames: FramesVec,
 }
 
 impl FrameGenerator {
@@ -79,7 +81,7 @@ impl FrameGenerator {
         })
     }
 
-    fn generate_frames(&mut self, status: PowerStatus) -> Result<Vec<Vec<u8>>> {
+    fn generate_frames(&mut self, status: PowerStatus) -> Result<FramesVec> {
         match status {
             PowerStatus::Calculating { progress, total } => self.generate_calculating(progress, total)?,
             _ => todo!("Implement other statuses"),
@@ -120,26 +122,30 @@ impl FrameGenerator {
             ),
         )?;
 
-        self.push_frame();
+        self.push_frame(1);
         Ok(())
     }
 
-    fn push_frame(&mut self) {
-        self.frames.push(self.canvas.surface().without_lock().unwrap().into());
+    fn push_frame(&mut self, duration_frames: u32) {
+        self.frames.push((self.canvas.surface().without_lock().unwrap().into(), duration_frames));
     }
 }
 
-fn encode_frames(frames: Vec<Vec<u8>>) -> Result<WebPMemory> {
+fn encode_frames(frames: FramesVec) -> Result<WebPMemory> {
     let webp_config = WebPConfig::new().unwrap();
     let mut encoder = AnimEncoder::new(WIDTH, HEIGHT, &webp_config);
 
-    for (i, frame) in frames.iter().enumerate() {
+    let mut frame_number = 0;
+    for (frame, duration_frames) in frames.iter() {
+        const FRAME_MS: u32 = 1000 / FPS;
+        const CATCHUP_FRAMES: u32 = (1.0 / (1000.0 / FPS as f64 - FRAME_MS as f64)).round() as u32;
         encoder.add_frame(AnimFrame::from_rgba(
             frame,
             WIDTH,
             HEIGHT,
-            i as i32 * 1000 / FPS,
+            (frame_number * FRAME_MS + frame_number / CATCHUP_FRAMES) as i32,
         ));
+        frame_number += duration_frames;
     }
 
     Ok(encoder.try_encode()?)
