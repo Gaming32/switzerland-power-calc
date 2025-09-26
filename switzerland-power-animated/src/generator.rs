@@ -1,51 +1,132 @@
+use crate::font::FontPair;
 use crate::PowerStatus;
-use crate::error::Result;
-use sdl2::Sdl;
-use sdl2::gfx::primitives::DrawRenderer;
+use crate::Result;
 use sdl2::pixels::{Color, PixelFormatEnum};
+use sdl2::rect::Rect;
+use sdl2::render::SurfaceCanvas;
 use sdl2::surface::Surface;
+use sdl2::ttf::Sdl2TtfContext;
+use sdl2::Sdl;
+use std::cell::RefCell;
 use webp::{AnimEncoder, AnimFrame, WebPConfig, WebPMemory};
 
-const WIDTH: u32 = 640;
-const HEIGHT: u32 = 480;
+const WIDTH: u32 = 1350;
+const HEIGHT: u32 = 800;
 const FPS: i32 = 30;
 
-#[derive(Clone)]
 pub struct AnimationGenerator {
-    _sdl: Sdl,
+    generator: RefCell<FrameGenerator>,
 }
 
 impl AnimationGenerator {
     pub fn new() -> Result<Self> {
         Ok(Self {
-            _sdl: sdl2::init()?,
+            generator: RefCell::new(FrameGenerator::new()?),
         })
     }
 
     pub fn generate(&self, status: PowerStatus) -> Result<WebPMemory> {
-        encode_frames(generate_frames(status)?)
+        encode_frames(self.generate_frames(status)?)
     }
 
     pub async fn generate_async(&self, status: PowerStatus) -> Result<Vec<u8>> {
-        let frames = generate_frames(status)?;
+        let frames = self.generate_frames(status)?;
         tokio::task::spawn_blocking(move || encode_frames(frames).map(|x| x.to_vec()))
             .await
             .unwrap()
     }
+
+    fn generate_frames(&self, status: PowerStatus) -> Result<Vec<Vec<u8>>> {
+        self.generator.borrow_mut().generate_frames(status)
+    }
 }
 
-fn generate_frames(status: PowerStatus) -> Result<Vec<Vec<u8>>> {
-    let mut canvas = Surface::new(WIDTH, HEIGHT, PixelFormatEnum::RGBA8888)?.into_canvas()?;
-    let mut frames = vec![];
+struct FrameGenerator {
+    canvas: SurfaceCanvas<'static>,
+    _sdl: Sdl,
 
-    for i in (0..HEIGHT).step_by(4) {
-        canvas.set_draw_color((0, 0, 0, 0));
-        canvas.fill_rect(None)?;
-        canvas.filled_circle((WIDTH / 2) as i16, i as i16, 100, Color::RED)?;
-        frames.push(canvas.surface().without_lock().unwrap().into());
+    bold_font: FontPair<'static>,
+    sdl_ttf: Sdl2TtfContext,
+
+    frames: Vec<Vec<u8>>,
+}
+
+impl FrameGenerator {
+    fn new() -> Result<Self> {
+        let sdl = sdl2::init()?;
+        let canvas = Surface::new(WIDTH, HEIGHT, PixelFormatEnum::RGBA8888)?.into_canvas()?;
+
+        let sdl_ttf = sdl2::ttf::init()?;
+        macro_rules! load_font {
+            ($main:literal, $fallback:literal, $point_size:literal) => {
+                FontPair::load(
+                    unsafe { core::mem::transmute::<&_, &'static _>(&sdl_ttf) },
+                    include_bytes!(concat!("assets/", $main)),
+                    include_bytes!(concat!("assets/", $fallback)),
+                    $point_size,
+                )?
+            };
+        }
+
+        Ok(Self {
+            canvas,
+            _sdl: sdl,
+
+            bold_font: load_font!("BlitzBold.otf", "FOT-RowdyStd-EB.otf", 80),
+            sdl_ttf,
+
+            frames: vec![],
+        })
     }
 
-    Ok(frames)
+    fn generate_frames(&mut self, status: PowerStatus) -> Result<Vec<Vec<u8>>> {
+        match status {
+            PowerStatus::Calculating { progress, total } => self.generate_calculating(progress, total)?,
+            _ => todo!("Implement other statuses"),
+        }
+
+        Ok(std::mem::take(&mut self.frames))
+    }
+
+    fn generate_calculating(&mut self, progress: u32, total: u32) -> Result<()> {
+        self.canvas.set_draw_color((0, 0, 0, 0));
+        self.canvas.fill_rect(None)?;
+
+        let text = self.bold_font.main.render_latin1(progress.to_string().as_bytes())
+            .blended(Color::WHITE)
+            .unwrap();
+        text.blit_scaled(
+            None,
+            self.canvas.surface_mut(),
+            Rect::new(
+                WIDTH as i32 / 2 - 54 - (text.width() as f64 * 0.6) as i32,
+                HEIGHT as i32 / 2 + 108 - (text.height() as f64 * 0.6) as i32,
+                (text.width() as f64 * 1.2) as u32,
+                (text.height() as f64 * 1.2) as u32,
+            ),
+        )?;
+
+        let text = self.bold_font.main.render_latin1(format!("/{total}").as_bytes())
+            .blended(Color::WHITE)
+            .unwrap();
+        text.blit_scaled(
+            None,
+            self.canvas.surface_mut(),
+            Rect::new(
+                WIDTH as i32 / 2 + 2 - (text.width() as f64 * 0.4) as i32,
+                HEIGHT as i32 / 2 + 126 - (text.height() as f64 * 0.4) as i32,
+                (text.width() as f64 * 0.8) as u32,
+                (text.height() as f64 * 0.8) as u32,
+            ),
+        )?;
+
+        self.push_frame();
+        Ok(())
+    }
+
+    fn push_frame(&mut self) {
+        self.frames.push(self.canvas.surface().without_lock().unwrap().into());
+    }
 }
 
 fn encode_frames(frames: Vec<Vec<u8>>) -> Result<WebPMemory> {
