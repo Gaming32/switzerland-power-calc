@@ -33,15 +33,6 @@ impl<'ttf> FontSet<'ttf> {
             return Ok(self.fonts.first().unwrap().render(text).blended(color)?);
         }
 
-        if let Ok(ch) = text.chars().exactly_one() {
-            let font = self
-                .fonts
-                .iter()
-                .find_or_first(|x| x.find_glyph(ch).is_some())
-                .unwrap();
-            return Ok(font.render_char(ch).blended(color)?);
-        }
-
         let result = match text
             .char_indices()
             .chunk_by(|(_, ch)| {

@@ -17,8 +17,8 @@ use sdl2::ttf::Sdl2TtfContext;
 use std::cell::RefCell;
 use webp::{AnimEncoder, AnimFrame, WebPConfig, WebPMemory};
 
-const WIDTH: u32 = 1450;
-const HEIGHT: u32 = 900;
+const WIDTH: u32 = 1015;
+const HEIGHT: u32 = 630;
 const HALF_WIDTH: i32 = WIDTH as i32 / 2;
 const HALF_HEIGHT: i32 = HEIGHT as i32 / 2;
 const FPS: u32 = 30;
@@ -118,18 +118,8 @@ impl FrameGenerator {
         self.canvas.set_draw_color((0, 0, 0, 0));
         self.canvas.fill_rect(None)?;
 
-        const BACKGROUND_WIDTH: u32 = WIDTH * 7 / 10;
-        const BACKGROUND_HEIGHT: u32 = HEIGHT * 7 / 10;
-        self.background.blit_scaled(
-            None,
-            self.canvas.surface_mut(),
-            Rect::new(
-                HALF_WIDTH - BACKGROUND_WIDTH as i32 / 2,
-                HALF_HEIGHT - BACKGROUND_HEIGHT as i32 / 2,
-                BACKGROUND_WIDTH,
-                BACKGROUND_HEIGHT,
-            ),
-        )?;
+        self.background
+            .blit_scaled(None, self.canvas.surface_mut(), None)?;
 
         self.swiss_flag.blit(
             None,
