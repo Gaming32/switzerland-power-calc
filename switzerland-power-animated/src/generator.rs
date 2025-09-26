@@ -1,6 +1,6 @@
 use crate::PowerStatus;
 use crate::Result;
-use crate::font::FontPair;
+use crate::font::FontSet;
 use sdl2::Sdl;
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
@@ -45,12 +45,11 @@ type FramesVec = Vec<(Vec<u8>, u32)>;
 
 struct FrameGenerator {
     canvas: SurfaceCanvas<'static>,
-    _sdl: Sdl,
-
-    bold_font: FontPair<'static>,
-    sdl_ttf: Sdl2TtfContext,
-
+    bold_font: FontSet<'static>,
     frames: FramesVec,
+
+    _sdl_ttf: Sdl2TtfContext,
+    _sdl: Sdl,
 }
 
 impl FrameGenerator {
@@ -60,24 +59,24 @@ impl FrameGenerator {
 
         let sdl_ttf = sdl2::ttf::init()?;
         macro_rules! load_font {
-            ($main:literal, $fallback:literal, $point_size:literal) => {
-                FontPair::load(
+            ($point_size:literal, $($font:literal),+ $(,)?) => {
+                FontSet::load(
                     unsafe { core::mem::transmute::<&_, &'static _>(&sdl_ttf) },
-                    include_bytes!(concat!("assets/", $main)),
-                    include_bytes!(concat!("assets/", $fallback)),
                     $point_size,
+                    &[$(
+                        include_bytes!(concat!("assets/", $font))
+                    ),+],
                 )?
             };
         }
 
         Ok(Self {
             canvas,
-            _sdl: sdl,
-
-            bold_font: load_font!("BlitzBold.otf", "FOT-RowdyStd-EB.otf", 80),
-            sdl_ttf,
-
+            bold_font: load_font!(80, "BlitzBold.otf", "FOT-RowdyStd-EB.otf"),
             frames: vec![],
+
+            _sdl: sdl,
+            _sdl_ttf: sdl_ttf,
         })
     }
 
@@ -98,10 +97,7 @@ impl FrameGenerator {
 
         let text = self
             .bold_font
-            .main
-            .render_latin1(progress.to_string().as_bytes())
-            .blended(Color::WHITE)
-            .unwrap();
+            .render(Color::WHITE, &(progress - 1).to_string())?;
         text.blit_scaled(
             None,
             self.canvas.surface_mut(),
@@ -112,13 +108,9 @@ impl FrameGenerator {
                 (text.height() as f64 * 1.2) as u32,
             ),
         )?;
+        drop(text);
 
-        let text = self
-            .bold_font
-            .main
-            .render_latin1(format!("/{total}").as_bytes())
-            .blended(Color::WHITE)
-            .unwrap();
+        let text = self.bold_font.render(Color::WHITE, &format!("/{total}"))?;
         text.blit_scaled(
             None,
             self.canvas.surface_mut(),
@@ -129,6 +121,7 @@ impl FrameGenerator {
                 (text.height() as f64 * 0.8) as u32,
             ),
         )?;
+        drop(text);
 
         self.push_frame(1);
         Ok(())
