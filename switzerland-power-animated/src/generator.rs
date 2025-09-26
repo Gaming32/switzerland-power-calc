@@ -1,17 +1,26 @@
 use crate::PowerStatus;
 use crate::Result;
+use crate::alignment::Alignment;
+use crate::alignment::HorizontalAlignment::Left;
+use crate::alignment::VerticalAlignment::Middle;
 use crate::font::FontSet;
+use crate::texts::get_text;
 use sdl2::Sdl;
+use sdl2::gfx::primitives::DrawRenderer;
+use sdl2::image::{ImageRWops, InitFlag, Sdl2ImageContext};
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::rect::Rect;
-use sdl2::render::SurfaceCanvas;
+use sdl2::render::{BlendMode, SurfaceCanvas};
+use sdl2::rwops::RWops;
 use sdl2::surface::Surface;
 use sdl2::ttf::Sdl2TtfContext;
 use std::cell::RefCell;
 use webp::{AnimEncoder, AnimFrame, WebPConfig, WebPMemory};
 
-const WIDTH: u32 = 1350;
-const HEIGHT: u32 = 800;
+const WIDTH: u32 = 1450;
+const HEIGHT: u32 = 900;
+const HALF_WIDTH: i32 = WIDTH as i32 / 2;
+const HALF_HEIGHT: i32 = HEIGHT as i32 / 2;
 const FPS: u32 = 30;
 
 pub struct AnimationGenerator {
@@ -45,19 +54,25 @@ type FramesVec = Vec<(Vec<u8>, u32)>;
 
 struct FrameGenerator {
     canvas: SurfaceCanvas<'static>,
-    bold_font: FontSet<'static>,
     frames: FramesVec,
 
+    background: Surface<'static>,
+    swiss_flag: Surface<'static>,
+    bold_font: FontSet<'static>,
+
     _sdl_ttf: Sdl2TtfContext,
+    _sdl_image: Sdl2ImageContext,
     _sdl: Sdl,
 }
 
 impl FrameGenerator {
     fn new() -> Result<Self> {
         let sdl = sdl2::init()?;
-        let canvas = Surface::new(WIDTH, HEIGHT, PixelFormatEnum::RGBA8888)?.into_canvas()?;
-
+        let sdl_image = sdl2::image::init(InitFlag::PNG)?;
         let sdl_ttf = sdl2::ttf::init()?;
+
+        let canvas = Surface::new(WIDTH, HEIGHT, PixelFormatEnum::ABGR8888)?.into_canvas()?;
+
         macro_rules! load_font {
             ($point_size:literal, $($font:literal),+ $(,)?) => {
                 FontSet::load(
@@ -70,12 +85,20 @@ impl FrameGenerator {
             };
         }
 
+        let mut background =
+            RWops::from_bytes(include_bytes!("assets/background.png"))?.load_png()?;
+        background.set_blend_mode(BlendMode::None)?;
+
         Ok(Self {
             canvas,
-            bold_font: load_font!(80, "BlitzBold.otf", "FOT-RowdyStd-EB.otf"),
             frames: vec![],
 
+            background,
+            swiss_flag: RWops::from_bytes(include_bytes!("assets/swiss-flag.png"))?.load_png()?,
+            bold_font: load_font!(80, "BlitzBold.otf", "FOT-RowdyStd-EB.otf"),
+
             _sdl: sdl,
+            _sdl_image: sdl_image,
             _sdl_ttf: sdl_ttf,
         })
     }
@@ -95,35 +118,98 @@ impl FrameGenerator {
         self.canvas.set_draw_color((0, 0, 0, 0));
         self.canvas.fill_rect(None)?;
 
-        let text = self
-            .bold_font
-            .render(Color::WHITE, &(progress - 1).to_string())?;
-        text.blit_scaled(
+        const BACKGROUND_WIDTH: u32 = WIDTH * 7 / 10;
+        const BACKGROUND_HEIGHT: u32 = HEIGHT * 7 / 10;
+        self.background.blit_scaled(
             None,
             self.canvas.surface_mut(),
             Rect::new(
-                WIDTH as i32 / 2 - 54 - (text.width() as f64 * 0.6) as i32,
-                HEIGHT as i32 / 2 + 108 - (text.height() as f64 * 0.6) as i32,
-                (text.width() as f64 * 1.2) as u32,
-                (text.height() as f64 * 1.2) as u32,
+                HALF_WIDTH - BACKGROUND_WIDTH as i32 / 2,
+                HALF_HEIGHT - BACKGROUND_HEIGHT as i32 / 2,
+                BACKGROUND_WIDTH,
+                BACKGROUND_HEIGHT,
             ),
         )?;
-        drop(text);
 
-        let text = self.bold_font.render(Color::WHITE, &format!("/{total}"))?;
-        text.blit_scaled(
+        self.swiss_flag.blit(
             None,
             self.canvas.surface_mut(),
-            Rect::new(
-                WIDTH as i32 / 2 + 2 - (text.width() as f64 * 0.4) as i32,
-                HEIGHT as i32 / 2 + 126 - (text.height() as f64 * 0.4) as i32,
-                (text.width() as f64 * 0.8) as u32,
-                (text.height() as f64 * 0.8) as u32,
-            ),
+            Rect::new(HALF_WIDTH - 34, HALF_HEIGHT - 190 - 34, 68, 68),
         )?;
-        drop(text);
+
+        for i in 0..101 {
+            let x = HALF_WIDTH - 405 + i * 8;
+            const Y: i32 = HALF_HEIGHT + 48 - 5;
+            self.canvas
+                .filled_circle(x as i16 + 4, Y as i16 + 4, 2, (64, 255, 255, 255))?;
+        }
+
+        self.print_text(
+            (0, -50 + 90, 850, 147),
+            Alignment::CENTER,
+            Alignment::CENTER,
+            (0.6, 0.59),
+            Color::WHITE,
+            get_text("en", "calculating"),
+        )?;
+
+        self.print_text(
+            (-54, -50 - 108, 200, 206),
+            Alignment::CENTER,
+            Alignment::CENTER,
+            (1.2, 1.2),
+            Color::WHITE,
+            &(progress - 1).to_string(),
+        )?;
+
+        self.print_text(
+            (2, -50 - 126, 200, 150),
+            (Left, Middle),
+            (Left, Middle),
+            (0.8, 0.8),
+            Color::WHITE,
+            &format!("/{total}"),
+        )?;
 
         self.push_frame(1);
+        Ok(())
+    }
+
+    fn print_text(
+        &mut self,
+        container: impl Into<Rect>,
+        anchor: impl Into<Alignment>,
+        text_alignment: impl Into<Alignment>,
+        (x_scale, y_scale): (f64, f64),
+        color: impl Into<Color>,
+        text: &str,
+    ) -> Result<()> {
+        let container = container.into();
+        let anchor = anchor.into();
+        let text_alignment = text_alignment.into();
+
+        let text = self.bold_font.render(color, text)?;
+
+        let container_x =
+            HALF_WIDTH + container.x() - anchor.horizontal.align(container.width() as i32);
+        let container_y =
+            HALF_HEIGHT - container.y() - anchor.vertical.align(container.height() as i32);
+        let text_rel_x = text_alignment.horizontal.align(container.width() as i32)
+            - text_alignment
+                .horizontal
+                .align((text.width() as f64 * x_scale) as i32);
+        let text_rel_y = text_alignment.vertical.align(container.height() as i32)
+            - text_alignment
+                .vertical
+                .align((text.height() as f64 * y_scale) as i32);
+
+        let rect = Rect::new(
+            container_x + text_rel_x,
+            container_y + text_rel_y,
+            (text.width() as f64 * x_scale) as u32,
+            (text.height() as f64 * y_scale) as u32,
+        );
+        text.blit_scaled(None, self.canvas.surface_mut(), rect)?;
         Ok(())
     }
 

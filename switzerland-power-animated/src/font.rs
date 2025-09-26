@@ -77,7 +77,7 @@ impl<'ttf> FontSet<'ttf> {
                     .max()
                     .unwrap();
 
-                let mut result = Surface::new(width, height, PixelFormatEnum::RGBA8888)?;
+                let mut result = Surface::new(width, height, PixelFormatEnum::ABGR8888)?;
                 let mut cur_x = 0;
                 for (font, segment) in segments {
                     let rendered_segment = font.render(segment).blended(color)?;
