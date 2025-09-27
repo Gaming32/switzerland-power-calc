@@ -82,7 +82,7 @@ impl AnimationGenerator {
                 Pane {
                     rect: Rect::new(0, 0, 1015, 630),
                     contents: PaneContents::Image(
-                        RWops::from_bytes(include_bytes!("assets/background.png"))?.load_png()?,
+                        RWops::from_bytes(include_bytes!("assets/calc-rank-background.png"))?.load_png()?,
                     ),
                     ..Default::default()
                 }

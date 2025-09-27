@@ -9,7 +9,7 @@ pub enum PowerStatus {
         power: f64,
         rank: u32,
     },
-    Normal {
+    SetPlayed {
         old_power: f64,
         new_power: f64,
         old_rank: u32,
