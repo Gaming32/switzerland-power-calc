@@ -17,7 +17,7 @@ impl Keyframe {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct AnimationTrack {
     pub keyframes: &'static [Keyframe],
 }

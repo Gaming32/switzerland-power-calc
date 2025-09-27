@@ -21,13 +21,10 @@ fn main() {
             phf_codegen::Map::new()
                 .entry(
                     "calculating",
-                    lit(&match lang_name.as_str() {
-                        "en" => "Calculating Switzerland Power...".to_string(),
-                        "ja" => "Switzerland パワー 計測中…".to_string(),
-                        _ => format!(
-                            "Switzerland Power {}",
-                            get_translation("LayoutMsg/Tml_ListRecord_00", "030")
-                        ),
+                    lit(match lang_name.as_str() {
+                        "en" => "Calculating Switzerland Power...",
+                        "ja" => "Switzerland パワー 計測中…",
+                        _ => get_translation("LayoutMsg/Tml_ListRecord_00", "030"),
                     }),
                 )
                 .entry(
@@ -36,6 +33,25 @@ fn main() {
                         "LayoutMsg/Lobby_ResultDialogue_00",
                         "T_Rank_00",
                     )),
+                )
+                .entry(
+                    "position",
+                    lit(get_translation(
+                        "LayoutMsg/Lobby_ResultDialogue_00",
+                        "T_XRankTitle_00",
+                    )),
+                )
+                .entry(
+                    "estimate",
+                    lit(get_translation(
+                        "LayoutMsg/Lobby_ResultDialogue_00",
+                        "T_XRankTitle_01",
+                    )),
+                )
+                .entry(
+                    "rank_value",
+                    lit(&get_translation("LayoutMsg/Lobby_ResultDialogue_00", "200")
+                        .replace("[group=0002 type=0000 params=00 04 00 00]", "{rank}")),
                 )
                 .build()
                 .to_string(),

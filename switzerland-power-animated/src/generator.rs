@@ -4,12 +4,12 @@ use crate::alignment::Alignment;
 use crate::animation::AnimationTrack;
 use crate::animations::{
     PROGRESS_IN_ALPHA, PROGRESS_IN_SCALE, RESULT_PANE_ALPHA, RESULT_POWER_SCALE,
-    RESULT_PROGRESS_ALPHA, RESULT_PROGRESS_SCALE, WINDOW_IN_ALPHA, WINDOW_IN_SCALE,
-    WINDOW_OUT_ALPHA, WINDOW_OUT_SCALE,
+    RESULT_PROGRESS_ALPHA, RESULT_PROGRESS_SCALE, RESULT_RANK_ALPHA, RESULT_RANK_SCALE,
+    WINDOW_IN_ALPHA, WINDOW_IN_SCALE, WINDOW_OUT_ALPHA, WINDOW_OUT_SCALE,
 };
 use crate::font::FontSet;
 use crate::layout::{BuiltPane, Pane, PaneContents};
-use crate::texts::get_text;
+use crate::texts::{get_text, get_text_fmt};
 use sdl2::Sdl;
 use sdl2::gfx::primitives::DrawRenderer;
 use sdl2::image::{ImageRWops, InitFlag, Sdl2ImageContext};
@@ -27,6 +27,7 @@ const WIDTH: u32 = 1250;
 const HEIGHT: u32 = 776;
 const FPS: u32 = 60;
 const LANG: &str = "en"; // TODO: Make configurable
+const SWITZERLAND_COLOR: Color = Color::RGB(218, 41, 28);
 
 pub(crate) const PIXEL_FORMAT: PixelFormatEnum = PixelFormatEnum::ABGR8888;
 
@@ -43,6 +44,12 @@ pub struct AnimationGenerator {
     result_pane: BuiltPane,
     calculated_text: BuiltPane,
     power_text: BuiltPane,
+
+    rank_pane: BuiltPane,
+    position_text: BuiltPane,
+    estimate_text: BuiltPane,
+    inner_rank_pane: BuiltPane,
+    rank_text: BuiltPane,
 
     _sdl_ttf: Sdl2TtfContext,
     _sdl_image: Sdl2ImageContext,
@@ -163,7 +170,7 @@ impl AnimationGenerator {
                             contents: PaneContents::Text {
                                 text: "".into(),
                                 font: bold_font.clone(),
-                                color: Color::RGB(218, 41, 28),
+                                color: SWITZERLAND_COLOR,
                                 scale: (0.6, 0.59),
                                 text_alignment: Alignment::CENTER,
                             },
@@ -187,6 +194,65 @@ impl AnimationGenerator {
                     ..Default::default()
                 }
                 .into(),
+                Pane {
+                    name: "rank_pane",
+                    rect: Rect::new(-12, -93, 45, 60),
+                    alpha: 0,
+                    children: vec![
+                        Pane {
+                            name: "position_text",
+                            rect: Rect::new(0, 180, 600, 105),
+                            contents: PaneContents::Text {
+                                text: "".into(),
+                                font: bold_font.clone(),
+                                color: SWITZERLAND_COLOR,
+                                scale: (0.6, 0.59),
+                                text_alignment: Alignment::CENTER,
+                            },
+                            ..Default::default()
+                        }
+                        .into(),
+                        Pane {
+                            name: "estimate_text",
+                            rect: Rect::new(-170, 47, 300, 93),
+                            parent_anchor: Alignment::LEFT,
+                            contents: PaneContents::Text {
+                                text: "".into(),
+                                font: bold_font.clone(),
+                                color: Color::RGB(0x80, 0x80, 0x80),
+                                scale: (0.6, 0.59),
+                                text_alignment: Alignment::CENTER,
+                            },
+                            ..Default::default()
+                        }
+                        .into(),
+                        Pane {
+                            name: "inner_rank_pane",
+                            rect: Rect::new(7, -52, 45, 60),
+                            alpha: 0,
+                            children: vec![
+                                Pane {
+                                    name: "rank_text",
+                                    rect: Rect::new(0, 8, 680, 180),
+                                    parent_anchor: Alignment::LEFT,
+                                    contents: PaneContents::Text {
+                                        text: "".into(),
+                                        font: bold_font.clone(),
+                                        color: Color::WHITE,
+                                        scale: (1.2, 1.19),
+                                        text_alignment: Alignment::CENTER,
+                                    },
+                                    ..Default::default()
+                                }
+                                .into(),
+                            ],
+                            ..Default::default()
+                        }
+                        .into(),
+                    ],
+                    ..Default::default()
+                }
+                .into(),
             ],
             ..Default::default()
         }
@@ -200,6 +266,12 @@ impl AnimationGenerator {
         let result_pane = root_pane.child(&["result_pane"]).unwrap();
         let calculated_text = result_pane.child(&["calculated_text"]).unwrap();
         let power_text = result_pane.child(&["power_text"]).unwrap();
+
+        let rank_pane = root_pane.child(&["rank_pane"]).unwrap();
+        let position_text = rank_pane.child(&["position_text"]).unwrap();
+        let estimate_text = rank_pane.child(&["estimate_text"]).unwrap();
+        let inner_rank_pane = rank_pane.child(&["inner_rank_pane"]).unwrap();
+        let rank_text = inner_rank_pane.child(&["rank_text"]).unwrap();
 
         Ok(Self {
             state: RefCell::new(GeneratorState {
@@ -217,6 +289,12 @@ impl AnimationGenerator {
             result_pane,
             calculated_text,
             power_text,
+
+            rank_pane,
+            position_text,
+            estimate_text,
+            inner_rank_pane,
+            rank_text,
 
             _sdl: sdl,
             _sdl_image: sdl_image,
@@ -240,13 +318,18 @@ impl AnimationGenerator {
     fn generate_frames(&self, status: PowerStatus) -> Result<FramesVec> {
         match status {
             PowerStatus::Calculating { progress, total } => {
-                self.generate_calculating(progress, total, None)?
+                self.generate_calculating(progress, total, None, None)?
             }
             PowerStatus::Calculated {
                 calculation_rounds,
                 power,
-                rank: _,
-            } => self.generate_calculating(calculation_rounds, calculation_rounds, Some(power))?,
+                rank,
+            } => self.generate_calculating(
+                calculation_rounds,
+                calculation_rounds,
+                Some(power),
+                Some(rank),
+            )?,
             _ => todo!("Implement other statuses"),
         }
         self.reset_ui();
@@ -259,6 +342,7 @@ impl AnimationGenerator {
         progress: u32,
         total: u32,
         calculated_power: Option<f64>,
+        estimated_rank: Option<u32>,
     ) -> Result<()> {
         let mut state = self.state.borrow_mut();
 
@@ -284,7 +368,7 @@ impl AnimationGenerator {
             &self.progress_text,
             PROGRESS_IN_SCALE,
             PROGRESS_IN_ALPHA,
-            60,
+            120,
         )?;
 
         if let Some(calculated_power) = calculated_power {
@@ -315,16 +399,52 @@ impl AnimationGenerator {
             self.power_text.edit(|x| {
                 x.scale = 1.0;
             });
-            state.render_frame(&self.root_pane, 60)?;
+            state.render_frame(&self.root_pane, 180)?;
         }
 
-        state.push_frame(60);
+        if let Some(estimated_rank) = estimated_rank {
+            state.animate_transition(
+                &self.root_pane,
+                &self.root_pane,
+                WINDOW_OUT_SCALE,
+                WINDOW_OUT_ALPHA,
+                6,
+            )?;
+
+            self.result_pane.edit(|x| x.alpha = 0);
+            self.rank_pane.edit(|x| x.alpha = 255);
+
+            self.position_text.set_text(get_text(LANG, "position"));
+            self.estimate_text.set_text(get_text(LANG, "estimate"));
+            self.rank_text.set_text(get_text_fmt(
+                LANG,
+                "rank_value",
+                vec![("rank", estimated_rank.to_string())],
+            ));
+
+            state.animate_transition(
+                &self.root_pane,
+                &self.root_pane,
+                WINDOW_IN_SCALE,
+                WINDOW_IN_ALPHA,
+                6,
+            )?;
+
+            state.animate_transition(
+                &self.root_pane,
+                &self.inner_rank_pane,
+                RESULT_RANK_SCALE,
+                RESULT_RANK_ALPHA,
+                120,
+            )?;
+        }
+
         state.animate_transition(
             &self.root_pane,
             &self.root_pane,
             WINDOW_OUT_SCALE,
             WINDOW_OUT_ALPHA,
-            60,
+            90,
         )?;
         state.push_frame(0);
 
@@ -354,6 +474,15 @@ impl AnimationGenerator {
         self.power_text.edit(|x| {
             x.scale = 1.0;
         });
+
+        self.rank_pane.edit(|x| {
+            x.alpha = 0;
+        });
+        self.inner_rank_pane.edit(|x| {
+            x.scale = 1.0;
+            x.alpha = 0;
+        });
+        self.rank_text.set_text("");
     }
 }
 

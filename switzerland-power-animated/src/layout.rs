@@ -16,6 +16,7 @@ pub struct Pane {
     pub scale: f64,
     pub alpha: u8,
     pub anchor: Alignment,
+    pub parent_anchor: Alignment,
     pub contents: PaneContents,
     pub children: Vec<Rc<RefCell<Pane>>>,
 }
@@ -34,6 +35,7 @@ impl Default for Pane {
             scale: 1.0,
             alpha: 255,
             anchor: Alignment::CENTER,
+            parent_anchor: Alignment::CENTER,
             contents: PaneContents::Null,
             children: vec![],
         }
@@ -62,14 +64,24 @@ impl Pane {
     fn render(
         &self,
         canvas: &mut SurfaceCanvas,
-        origin_x: i32,
-        origin_y: i32,
+        parent_rect: Rect,
         parent_scale: f64,
     ) -> Result<()> {
+        let origin_x = parent_rect.x()
+            + self
+                .parent_anchor
+                .horizontal
+                .align(parent_rect.width() as i32);
+        let origin_y = parent_rect.y()
+            + self
+                .parent_anchor
+                .vertical
+                .align(parent_rect.height() as i32);
+
         let accumulated_scale = parent_scale * self.scale;
         let width = (self.rect.width() as f64 * accumulated_scale) as u32;
         let height = (self.rect.height() as f64 * accumulated_scale) as u32;
-        let adjusted_rect = Rect::new(
+        let draw_rect = Rect::new(
             origin_x + (self.rect.x as f64 * parent_scale) as i32
                 - self.anchor.horizontal.align(width as i32),
             origin_y
@@ -81,18 +93,19 @@ impl Pane {
 
         match self.alpha {
             0 => {}
-            255 => self.render_internal(canvas, adjusted_rect, accumulated_scale)?,
+            255 => self.render_internal(canvas, draw_rect, accumulated_scale)?,
             alpha => {
-                let mut sub_canvas =
-                    Surface::new(adjusted_rect.width(), adjusted_rect.height(), PIXEL_FORMAT)?
-                        .into_canvas()?;
-                let draw_rect = sub_canvas.surface().rect();
+                let mut sub_canvas = Surface::new(
+                    canvas.surface().width(),
+                    canvas.surface().height(),
+                    PIXEL_FORMAT,
+                )?
+                .into_canvas()?;
                 self.render_internal(&mut sub_canvas, draw_rect, accumulated_scale)?;
-
                 sub_canvas.surface_mut().set_alpha_mod(alpha);
                 sub_canvas
                     .surface()
-                    .blit(None, canvas.surface_mut(), adjusted_rect)?;
+                    .blit(None, canvas.surface_mut(), None)?;
             }
         }
         Ok(())
@@ -109,10 +122,9 @@ impl Pane {
 
         self.contents.render(canvas, draw_rect, accumulated_scale)?;
 
-        let center = draw_rect.center();
         for child in &self.children {
             let child = child.borrow();
-            child.render(canvas, center.x, center.y, accumulated_scale)?;
+            child.render(canvas, draw_rect, accumulated_scale)?;
         }
 
         canvas.set_scale(old_scale.0, old_scale.1)?;
@@ -204,9 +216,9 @@ impl BuiltPane {
     }
 
     pub fn render(&self, canvas: &mut SurfaceCanvas) -> Result<()> {
-        let center = canvas.surface().rect().center();
+        let rect = canvas.surface().rect();
         let pane = self.pane();
-        pane.render(canvas, center.x, center.y, pane.scale)
+        pane.render(canvas, rect, pane.scale)
     }
 
     pub fn child(&self, path: &[&str]) -> Option<BuiltPane> {

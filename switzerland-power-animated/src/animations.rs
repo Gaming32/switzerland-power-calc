@@ -46,6 +46,18 @@ pub const RESULT_POWER_SCALE: AnimationTrack = AnimationTrack::new(&[
     Keyframe::new(0.0, 9.0, 1.0),
 ]);
 
+pub const RESULT_RANK_SCALE: AnimationTrack = AnimationTrack::new(&[
+    Keyframe::new(0.0, 0.0, 2.0),
+    Keyframe::new(0.0, 10.0, 0.8074777),
+    Keyframe::new(0.0, 13.0, 1.062221),
+    Keyframe::new(-0.0311105251, 15.0, 1.0),
+]);
+
+pub const RESULT_RANK_ALPHA: AnimationTrack = AnimationTrack::new(&[
+    Keyframe::new(0.0, 0.0, 0.0),
+    Keyframe::new(0.0, 15.0, 255.0),
+]);
+
 pub const WINDOW_OUT_SCALE: AnimationTrack = AnimationTrack::new(&[
     Keyframe::new(0.04875219, 0.0, 1.0),
     Keyframe::new(0.0, 10.0, 1.23238242),
