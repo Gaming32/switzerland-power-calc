@@ -249,6 +249,7 @@ impl AnimationGenerator {
             } => self.generate_calculating(calculation_rounds, calculation_rounds, Some(power))?,
             _ => todo!("Implement other statuses"),
         }
+        self.reset_ui();
 
         Ok(std::mem::take(&mut self.state.borrow_mut().frames))
     }
@@ -277,8 +278,7 @@ impl AnimationGenerator {
         self.progress_text.edit(|x| x.alpha = 0);
         state.render_frame(&self.root_pane, 1)?;
 
-        self.progress_text
-            .edit(|x| x.contents.set_text(progress.to_string()));
+        self.progress_text.set_text(progress.to_string());
         state.animate_transition(
             &self.root_pane,
             &self.progress_text,
@@ -329,6 +329,31 @@ impl AnimationGenerator {
         state.push_frame(0);
 
         Ok(())
+    }
+
+    fn reset_ui(&self) {
+        self.root_pane.edit(|x| {
+            x.scale = 1.0;
+            x.alpha = 255;
+        });
+
+        self.progress_pane.edit(|x| {
+            x.scale = 1.0;
+            x.alpha = 255;
+        });
+        self.progress_text.edit(|x| {
+            x.scale = 1.0;
+            x.alpha = 255;
+            x.set_text("");
+        });
+        self.total_text.set_text("");
+
+        self.result_pane.edit(|x| {
+            x.alpha = 0;
+        });
+        self.power_text.edit(|x| {
+            x.scale = 1.0;
+        });
     }
 }
 

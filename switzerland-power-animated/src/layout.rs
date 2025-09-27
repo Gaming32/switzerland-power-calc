@@ -51,6 +51,14 @@ impl Pane {
         BuiltPane(self.into())
     }
 
+    pub fn set_text(&mut self, new_text: impl Into<Cow<'static, str>>) {
+        if let PaneContents::Text { text, .. } = &mut self.contents {
+            *text = new_text.into();
+        } else {
+            panic!("PaneContents::set_text called on a non-Text Pane!");
+        }
+    }
+
     fn render(
         &self,
         canvas: &mut SurfaceCanvas,
@@ -128,14 +136,6 @@ pub enum PaneContents {
 }
 
 impl PaneContents {
-    pub fn set_text(&mut self, new_text: impl Into<Cow<'static, str>>) {
-        if let PaneContents::Text { text, .. } = self {
-            *text = new_text.into();
-        } else {
-            panic!("PaneContents::set_text called on a non-Text Pane!");
-        }
-    }
-
     fn render(&self, canvas: &mut SurfaceCanvas, viewport: Rect, scale: f64) -> Result<()> {
         match self {
             PaneContents::Null => {}
@@ -200,7 +200,7 @@ impl BuiltPane {
     }
 
     pub fn set_text(&self, new_text: impl Into<Cow<'static, str>>) {
-        self.edit(|x| x.contents.set_text(new_text))
+        self.edit(|x| x.set_text(new_text))
     }
 
     pub fn render(&self, canvas: &mut SurfaceCanvas) -> Result<()> {
