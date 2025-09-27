@@ -18,8 +18,8 @@ use sdl2::render::{BlendMode, SurfaceCanvas};
 use sdl2::rwops::RWops;
 use sdl2::surface::Surface;
 use sdl2::ttf::Sdl2TtfContext;
-use std::borrow::Cow;
 use std::cell::RefCell;
+use std::rc::Rc;
 use webp::{AnimEncoder, AnimFrame, WebPConfig, WebPMemory};
 
 const WIDTH: u32 = 1250;
@@ -32,9 +32,11 @@ pub(crate) const PIXEL_FORMAT: PixelFormatEnum = PixelFormatEnum::ABGR8888;
 pub struct AnimationGenerator {
     state: RefCell<GeneratorState>,
 
-    background: Surface<'static>,
-    swiss_flag: Surface<'static>,
-    bold_font: FontSet<'static>,
+    root_pane: BuiltPane,
+    progress_pane: BuiltPane,
+    calculating_text: BuiltPane,
+    progress_text: BuiltPane,
+    total_text: BuiltPane,
 
     _sdl_ttf: Sdl2TtfContext,
     _sdl_image: Sdl2ImageContext,
@@ -59,9 +61,101 @@ impl AnimationGenerator {
             };
         }
 
-        let mut background =
-            RWops::from_bytes(include_bytes!("assets/background.png"))?.load_png()?;
-        background.set_blend_mode(BlendMode::None)?;
+        let bold_font = Rc::new(load_font!(80, "BlitzBold.otf", "FOT-RowdyStd-EB.otf"));
+
+        let root_pane = Pane {
+            rect: Rect::new(0, 0, WIDTH, HEIGHT),
+            children: vec![
+                Pane {
+                    rect: Rect::new(0, 0, 1015, 630),
+                    contents: PaneContents::Image(
+                        RWops::from_bytes(include_bytes!("assets/background.png"))?.load_png()?,
+                    ),
+                    ..Default::default()
+                }
+                .into(),
+                Pane {
+                    rect: Rect::new(0, 190, 68, 68),
+                    contents: PaneContents::Image(
+                        RWops::from_bytes(include_bytes!("assets/swiss-flag.png"))?.load_png()?,
+                    ),
+                    ..Default::default()
+                }
+                .into(),
+                Pane {
+                    rect: Rect::new(0, 0, 811, 10),
+                    contents: PaneContents::Custom(&|canvas, rect| {
+                        for i in 0..101 {
+                            let x = rect.x + i * 8;
+                            // WARNING: filled_circle takes in ABGR instead of RGBA
+                            canvas.filled_circle(
+                                x as i16 + 4,
+                                rect.y as i16 + 4,
+                                2,
+                                (64, 255, 255, 255),
+                            )?;
+                        }
+                        Ok(())
+                    }),
+                    ..Default::default()
+                }
+                .into(),
+                Pane {
+                    name: "progress_pane",
+                    children: vec![
+                        Pane {
+                            name: "calculating_text",
+                            rect: Rect::new(0, 90, 850, 147),
+                            contents: PaneContents::Text {
+                                text: "Calculating...".into(),
+                                font: bold_font.clone(),
+                                color: Color::WHITE,
+                                scale: (0.6, 0.59),
+                                text_alignment: Alignment::CENTER,
+                            },
+                            ..Default::default()
+                        }
+                        .into(),
+                        Pane {
+                            name: "progress_text",
+                            rect: Rect::new(-54, -108, 200, 206),
+                            contents: PaneContents::Text {
+                                text: "0".into(),
+                                font: bold_font.clone(),
+                                color: Color::WHITE,
+                                scale: (1.2, 1.19),
+                                text_alignment: Alignment::CENTER,
+                            },
+                            ..Default::default()
+                        }
+                        .into(),
+                        Pane {
+                            name: "total_text",
+                            rect: Rect::new(2, -126, 200, 150),
+                            anchor: Alignment::LEFT,
+                            contents: PaneContents::Text {
+                                text: "/0".into(),
+                                font: bold_font.clone(),
+                                color: Color::WHITE,
+                                scale: (0.8, 0.8),
+                                text_alignment: Alignment::LEFT,
+                            },
+                            ..Default::default()
+                        }
+                        .into(),
+                    ],
+                    ..Default::default()
+                }
+                .into(),
+            ],
+            ..Default::default()
+        }
+        .build();
+
+        let progress_pane = root_pane.child(&["progress_pane"]).unwrap();
+        let calculating_text = progress_pane.child(&["calculating_text"]).unwrap();
+        let progress_text = progress_pane.child(&["progress_text"]).unwrap();
+        let total_text = progress_pane.child(&["total_text"]).unwrap();
 
         Ok(Self {
             state: RefCell::new(GeneratorState {
@@ -69,9 +163,11 @@ impl AnimationGenerator {
                 frames: vec![],
             }),
 
-            background,
-            swiss_flag: RWops::from_bytes(include_bytes!("assets/swiss-flag.png"))?.load_png()?,
-            bold_font: load_font!(80, "BlitzBold.otf", "FOT-RowdyStd-EB.otf"),
+            root_pane,
+            progress_pane,
+            calculating_text,
+            progress_text,
+            total_text,
 
             _sdl: sdl,
             _sdl_image: sdl_image,
@@ -116,110 +212,38 @@ impl AnimationGenerator {
     ) -> Result<()> {
         let mut state = self.state.borrow_mut();
 
-        let root_pane = Pane {
-            rect: state.canvas.surface().rect(),
-            children: vec![
-                Pane {
-                    rect: Rect::new(0, 0, 1015, 630),
-                    contents: PaneContents::Image(&self.background),
-                    ..Default::default()
-                }
-                .into(),
-                Pane {
-                    rect: Rect::new(0, 190, 68, 68),
-                    contents: PaneContents::Image(&self.swiss_flag),
-                    ..Default::default()
-                }
-                .into(),
-                Pane {
-                    rect: Rect::new(0, 0, 811, 10),
-                    contents: PaneContents::Custom(&|canvas, rect| {
-                        for i in 0..101 {
-                            let x = rect.x + i * 8;
-                            // WARNING: filled_circle takes in ABGR instead of RGBA
-                            canvas.filled_circle(
-                                x as i16 + 4,
-                                rect.y as i16 + 4,
-                                2,
-                                (64, 255, 255, 255),
-                            )?;
-                        }
-                        Ok(())
-                    }),
-                    ..Default::default()
-                }
-                .into(),
-                Pane {
-                    name: "progress_pane",
-                    children: vec![
-                        Pane {
-                            rect: Rect::new(0, 90, 850, 147),
-                            contents: PaneContents::Text {
-                                text: get_text(LANG, "calculating").into(),
-                                font: &self.bold_font,
-                                color: Color::WHITE,
-                                scale: (0.6, 0.59),
-                                text_alignment: Alignment::CENTER,
-                            },
-                            ..Default::default()
-                        }
-                        .into(),
-                        Pane {
-                            name: "progress_text",
-                            rect: Rect::new(-54, -108, 200, 206),
-                            contents: PaneContents::Text {
-                                text: (progress - 1).to_string().into(),
-                                font: &self.bold_font,
-                                color: Color::WHITE,
-                                scale: (1.2, 1.19),
-                                text_alignment: Alignment::CENTER,
-                            },
-                            ..Default::default()
-                        }
-                        .into(),
-                        Pane {
-                            rect: Rect::new(2, -126, 200, 150),
-                            anchor: Alignment::LEFT,
-                            contents: PaneContents::Text {
-                                text: format!("/{total}").into(),
-                                font: &self.bold_font,
-                                color: Color::WHITE,
-                                scale: (0.8, 0.8),
-                                text_alignment: Alignment::LEFT,
-                            },
-                            ..Default::default()
-                        }
-                        .into(),
-                    ],
-                    ..Default::default()
-                }
-                .into(),
-            ],
-            ..Default::default()
-        }
-        .build();
-        let progress_text = root_pane
-            .child(&["progress_pane", "progress_text"])
-            .unwrap();
+        self.calculating_text
+            .edit(|x| x.contents.set_text(get_text(LANG, "calculating")));
+        self.progress_text
+            .edit(|x| x.contents.set_text((progress - 1).to_string()));
+        self.total_text
+            .edit(|x| x.contents.set_text(format!("/{total}")));
 
-        state.animate_transition(&root_pane, &root_pane, WINDOW_IN_SCALE, WINDOW_IN_ALPHA)?;
-
-        progress_text.edit(|x| x.alpha = 0);
-        state.render_frame(&root_pane, 1)?;
-
-        progress_text.edit(|x| {
-            if let PaneContents::Text { text, .. } = &mut x.contents {
-                *text = Cow::Owned(progress.to_string());
-            }
-        });
         state.animate_transition(
-            &root_pane,
-            &progress_text,
+            &self.root_pane,
+            &self.root_pane,
+            WINDOW_IN_SCALE,
+            WINDOW_IN_ALPHA,
+        )?;
+
+        self.progress_text.edit(|x| x.alpha = 0);
+        state.render_frame(&self.root_pane, 1)?;
+
+        self.progress_text
+            .edit(|x| x.contents.set_text(progress.to_string()));
+        state.animate_transition(
+            &self.root_pane,
+            &self.progress_text,
             PROGRESS_IN_SCALE,
             PROGRESS_IN_ALPHA,
         )?;
 
-        state.animate_transition(&root_pane, &root_pane, WINDOW_OUT_SCALE, WINDOW_OUT_ALPHA)?;
+        state.animate_transition(
+            &self.root_pane,
+            &self.root_pane,
+            WINDOW_OUT_SCALE,
+            WINDOW_OUT_ALPHA,
+        )?;
 
         state.push_frame(0);
 

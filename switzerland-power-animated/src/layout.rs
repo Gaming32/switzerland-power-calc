@@ -10,17 +10,17 @@ use std::borrow::Cow;
 use std::cell::{Ref, RefCell};
 use std::rc::Rc;
 
-pub struct Pane<'a> {
+pub struct Pane {
     pub name: &'static str,
     pub rect: Rect,
     pub scale: f64,
     pub alpha: u8,
     pub anchor: Alignment,
-    pub contents: PaneContents<'a>,
-    pub children: Vec<Rc<RefCell<Pane<'a>>>>,
+    pub contents: PaneContents,
+    pub children: Vec<Rc<RefCell<Pane>>>,
 }
 
-impl Default for Pane<'_> {
+impl Default for Pane {
     fn default() -> Self {
         const DEFAULT_RECT: sdl2::sys::SDL_Rect = sdl2::sys::SDL_Rect {
             x: 0,
@@ -40,14 +40,14 @@ impl Default for Pane<'_> {
     }
 }
 
-impl<'a> From<Pane<'a>> for Rc<RefCell<Pane<'a>>> {
-    fn from(val: Pane<'a>) -> Self {
+impl From<Pane> for Rc<RefCell<Pane>> {
+    fn from(val: Pane) -> Self {
         Rc::new(RefCell::new(val))
     }
 }
 
-impl<'a> Pane<'a> {
-    pub fn build(self) -> BuiltPane<'a> {
+impl Pane {
+    pub fn build(self) -> BuiltPane {
         BuiltPane(self.into())
     }
 
@@ -113,21 +113,29 @@ impl<'a> Pane<'a> {
 }
 
 #[derive(Default)]
-pub enum PaneContents<'a> {
+pub enum PaneContents {
     #[default]
     Null,
-    Image(&'a Surface<'static>),
+    Image(Surface<'static>),
     Text {
         text: Cow<'static, str>,
-        font: &'a FontSet<'static>,
+        font: Rc<FontSet<'static>>,
         color: Color,
         scale: (f64, f64),
         text_alignment: Alignment,
     },
-    Custom(&'a dyn Fn(&mut SurfaceCanvas, Rect) -> Result<()>),
+    Custom(&'static dyn Fn(&mut SurfaceCanvas, Rect) -> Result<()>),
 }
 
-impl PaneContents<'_> {
+impl PaneContents {
+    pub fn set_text(&mut self, new_text: impl Into<Cow<'static, str>>) {
+        if let PaneContents::Text { text, .. } = self {
+            *text = new_text.into();
+        } else {
+            panic!("PaneContents::set_text called on a non-Text Pane!");
+        }
+    }
+
     fn render(&self, canvas: &mut SurfaceCanvas, viewport: Rect, scale: f64) -> Result<()> {
         match self {
             PaneContents::Null => {}
@@ -180,14 +188,14 @@ impl PaneContents<'_> {
 }
 
 #[derive(Clone)]
-pub struct BuiltPane<'a>(Rc<RefCell<Pane<'a>>>);
+pub struct BuiltPane(Rc<RefCell<Pane>>);
 
-impl<'a> BuiltPane<'a> {
-    pub fn pane(&self) -> Ref<'_, Pane<'a>> {
+impl BuiltPane {
+    pub fn pane(&self) -> Ref<'_, Pane> {
         self.0.borrow()
     }
 
-    pub fn edit<R>(&self, editor: impl FnOnce(&mut Pane<'a>) -> R) -> R {
+    pub fn edit<R>(&self, editor: impl FnOnce(&mut Pane) -> R) -> R {
         editor(&mut self.0.borrow_mut())
     }
 
@@ -197,7 +205,7 @@ impl<'a> BuiltPane<'a> {
         pane.render(canvas, center.x, center.y, pane.scale)
     }
 
-    pub fn child(&self, path: &[&str]) -> Option<BuiltPane<'a>> {
+    pub fn child(&self, path: &[&str]) -> Option<BuiltPane> {
         if path.is_empty() {
             return Some(self.clone());
         }
