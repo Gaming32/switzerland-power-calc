@@ -1,6 +1,7 @@
 use crate::Result;
+use crate::generator::PIXEL_FORMAT;
 use itertools::Itertools;
-use sdl2::pixels::{Color, PixelFormatEnum};
+use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::rwops::RWops;
 use sdl2::surface::Surface;
@@ -28,7 +29,7 @@ impl<'ttf> FontSet<'ttf> {
         })
     }
 
-    pub fn render(&self, color: impl Into<Color>, text: &str) -> Result<Surface<'_>> {
+    pub fn render<'a>(&self, color: impl Into<Color>, text: &str) -> Result<Surface<'a>> {
         if text.is_empty() {
             return Ok(self.fonts.first().unwrap().render(text).blended(color)?);
         }
@@ -68,7 +69,7 @@ impl<'ttf> FontSet<'ttf> {
                     .max()
                     .unwrap();
 
-                let mut result = Surface::new(width, height, PixelFormatEnum::ABGR8888)?;
+                let mut result = Surface::new(width, height, PIXEL_FORMAT)?;
                 let mut cur_x = 0;
                 for (font, segment) in segments {
                     let rendered_segment = font.render(segment).blended(color)?;

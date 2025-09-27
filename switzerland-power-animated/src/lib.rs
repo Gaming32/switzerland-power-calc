@@ -1,4 +1,6 @@
 mod alignment;
+mod animation;
+mod animations;
 mod error;
 mod font;
 mod generator;
