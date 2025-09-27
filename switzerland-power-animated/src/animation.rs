@@ -18,32 +18,34 @@ impl Keyframe {
 }
 
 #[derive(Clone, Debug)]
-pub struct AnimationTrack<KF> {
-    pub keyframes: KF,
+pub struct AnimationTrack {
+    pub keyframes: &'static [Keyframe],
 }
 
-impl<KF: AsRef<[Keyframe]>> AnimationTrack<KF> {
-    pub const fn new(keyframes: KF) -> Self {
+impl AnimationTrack {
+    pub const fn new(keyframes: &'static [Keyframe]) -> Self {
         Self { keyframes }
     }
 
     pub fn duration(&self) -> f64 {
-        self.keyframes.as_ref().last().map_or(0.0, |x| x.frame)
+        self.keyframes.last().map_or(0.0, |x| x.frame)
+    }
+
+    pub fn ending_value(&self, default: f64) -> f64 {
+        self.keyframes.last().map_or(default, |x| x.value)
     }
 
     pub fn value_at(&self, frame: f64) -> f64 {
-        let keyframes = self.keyframes.as_ref();
-
-        if keyframes.is_empty() {
+        if self.keyframes.is_empty() {
             return 0.0;
         }
-        if keyframes.len() == 1 {
-            return keyframes[0].value;
+        if self.keyframes.len() == 1 {
+            return self.keyframes[0].value;
         }
 
-        let mut before = keyframes.first().unwrap();
-        let mut after = keyframes.last().unwrap();
-        for keyframe in keyframes {
+        let mut before = self.keyframes.first().unwrap();
+        let mut after = self.keyframes.last().unwrap();
+        for keyframe in self.keyframes {
             if keyframe.frame <= frame {
                 before = keyframe;
             }

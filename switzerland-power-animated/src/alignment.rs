@@ -1,5 +1,3 @@
-use sdl2::rect::Point;
-
 #[derive(Debug, Copy, Clone)]
 #[allow(dead_code)]
 pub enum HorizontalAlignment {

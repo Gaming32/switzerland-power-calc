@@ -1,17 +1,14 @@
-use std::borrow::Cow;
-use crate::PowerStatus;
-use crate::Result;
 use crate::alignment::Alignment;
-use crate::alignment::HorizontalAlignment::Left;
-use crate::alignment::VerticalAlignment::Middle;
+use crate::animation::AnimationTrack;
 use crate::animations::{
     PROGRESS_IN_ALPHA, PROGRESS_IN_SCALE, WINDOW_IN_ALPHA, WINDOW_IN_SCALE, WINDOW_OUT_ALPHA,
     WINDOW_OUT_SCALE,
 };
 use crate::font::FontSet;
-use crate::layout::{Pane, PaneContents, BuiltPane};
+use crate::layout::{BuiltPane, Pane, PaneContents};
 use crate::texts::get_text;
-use sdl2::Sdl;
+use crate::PowerStatus;
+use crate::Result;
 use sdl2::gfx::primitives::DrawRenderer;
 use sdl2::image::{ImageRWops, InitFlag, Sdl2ImageContext};
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -20,13 +17,13 @@ use sdl2::render::{BlendMode, SurfaceCanvas};
 use sdl2::rwops::RWops;
 use sdl2::surface::Surface;
 use sdl2::ttf::Sdl2TtfContext;
+use sdl2::Sdl;
+use std::borrow::Cow;
 use std::cell::RefCell;
 use webp::{AnimEncoder, AnimFrame, WebPConfig, WebPMemory};
 
 const WIDTH: u32 = 1250;
 const HEIGHT: u32 = 776;
-const HALF_WIDTH: i32 = WIDTH as i32 / 2;
-const HALF_HEIGHT: i32 = HEIGHT as i32 / 2;
 const FPS: u32 = 60;
 const LANG: &str = "en"; // TODO: Make configurable
 
@@ -199,24 +196,18 @@ impl AnimationGenerator {
                 .into(),
             ],
             ..Default::default()
-        }.build();
+        }
+        .build();
         let progress_text = root_pane
             .child(&["progress_pane", "progress_text"])
             .unwrap();
 
-        for frame in 0..=WINDOW_IN_SCALE.duration() as u32 {
-            root_pane.edit(|x| {
-                x.scale = WINDOW_IN_SCALE.value_at(frame as f64);
-                x.alpha = WINDOW_IN_ALPHA.value_at(frame as f64) as u8;
-            });
-            state.render_frame(&root_pane, 1)?;
-        }
-
-        root_pane.edit(|x| {
-            x.scale = 1.0;
-            x.alpha = 255;
-        });
-        state.render_frame(&root_pane, 60)?;
+        state.animate_transition(
+            &root_pane,
+            &root_pane,
+            WINDOW_IN_SCALE,
+            WINDOW_IN_ALPHA,
+        )?;
 
         progress_text.edit(|x| x.alpha = 0);
         state.render_frame(&root_pane, 1)?;
@@ -226,33 +217,19 @@ impl AnimationGenerator {
                 *text = Cow::Owned(progress.to_string());
             }
         });
-        for frame in 0..=PROGRESS_IN_SCALE.duration() as u32 {
-            progress_text.edit(|x| {
-                x.scale = PROGRESS_IN_SCALE.value_at(frame as f64);
-                x.alpha = PROGRESS_IN_ALPHA.value_at(frame as f64) as u8;
-            });
-            state.render_frame(&root_pane, 1)?;
-        }
+        state.animate_transition(
+            &root_pane,
+            &progress_text,
+            PROGRESS_IN_SCALE,
+            PROGRESS_IN_ALPHA,
+        )?;
 
-        progress_text.edit(|x| {
-            x.scale = 1.0;
-            x.alpha = 255;
-        });
-        state.render_frame(&root_pane, 60)?;
-
-        for frame in 0..=WINDOW_OUT_SCALE.duration() as u32 {
-            root_pane.edit(|x| {
-                x.scale = WINDOW_OUT_SCALE.value_at(frame as f64);
-                x.alpha = WINDOW_OUT_ALPHA.value_at(frame as f64) as u8;
-            });
-            state.render_frame(&root_pane, 1)?;
-        }
-
-        root_pane.edit(|x| {
-            x.scale = 1.0;
-            x.alpha = 0;
-        });
-        state.render_frame(&root_pane, 60)?;
+        state.animate_transition(
+            &root_pane,
+            &root_pane,
+            WINDOW_OUT_SCALE,
+            WINDOW_OUT_ALPHA,
+        )?;
 
         state.push_frame(0);
 
@@ -268,6 +245,30 @@ struct GeneratorState {
 }
 
 impl GeneratorState {
+    fn animate_transition(
+        &mut self,
+        root_pane: &BuiltPane,
+        pane: &BuiltPane,
+        scale_anim: AnimationTrack,
+        alpha_anim: AnimationTrack,
+    ) -> Result<()> {
+        for frame in 0..=scale_anim.duration() as u32 {
+            pane.edit(|x| {
+                x.scale = scale_anim.value_at(frame as f64);
+                x.alpha = alpha_anim.value_at(frame as f64) as u8;
+            });
+            self.render_frame(&root_pane, 1)?;
+        }
+
+        pane.edit(|x| {
+            x.scale = scale_anim.ending_value(1.0);
+            x.alpha = alpha_anim.ending_value(255.0) as u8;
+        });
+        self.render_frame(&root_pane, 60)?;
+
+        Ok(())
+    }
+
     fn render_frame(&mut self, pane: &BuiltPane, duration_frames: u32) -> Result<()> {
         self.clear_canvas();
         pane.render(&mut self.canvas)?;
