@@ -1,3 +1,6 @@
+use derive_more::with_trait::FromStr;
+use std::collections::HashMap;
+
 const TEXTS_BY_LANGUAGE: phf::Map<&str, phf::Map<&str, &'static str>> =
     include!(concat!(env!("OUT_DIR"), "/splat_lang.rs"));
 
@@ -11,13 +14,15 @@ pub fn get_text(lang: &str, key: &'static str) -> &'static str {
         .unwrap_or(key)
 }
 
-pub fn get_text_fmt(lang: &str, key: &'static str, values: Vec<(&str, String)>) -> String {
-    strfmt::strfmt(
-        get_text(lang, key),
-        &values
-            .into_iter()
-            .map(|(key, value)| (key.to_string(), value))
-            .collect(),
-    )
-    .unwrap()
+pub fn get_text_fmt<const N: usize>(
+    lang: &str,
+    key: &'static str,
+    values: [(FmtKey, &str); N],
+) -> String {
+    strfmt::strfmt(get_text(lang, key), &HashMap::from(values)).unwrap()
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, FromStr)]
+pub enum FmtKey {
+    Rank,
 }

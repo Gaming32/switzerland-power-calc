@@ -1,55 +1,34 @@
 use crate::PowerStatus;
 use crate::Result;
-use crate::alignment::Alignment;
 use crate::animation::AnimationTrack;
-use crate::animations::{
-    PROGRESS_IN_ALPHA, PROGRESS_IN_SCALE, RESULT_PANE_ALPHA, RESULT_POWER_SCALE,
-    RESULT_PROGRESS_ALPHA, RESULT_PROGRESS_SCALE, RESULT_RANK_ALPHA, RESULT_RANK_SCALE,
-    WINDOW_IN_ALPHA, WINDOW_IN_SCALE, WINDOW_OUT_ALPHA, WINDOW_OUT_SCALE,
-};
 use crate::font::FontSet;
-use crate::layout::{BuiltPane, Pane, PaneContents};
-use crate::texts::{get_text, get_text_fmt};
+use crate::layout::BuiltPane;
+use crate::panes::calc_rank_pane;
+use crate::texts::{FmtKey, get_text, get_text_fmt};
 use sdl2::Sdl;
-use sdl2::gfx::primitives::DrawRenderer;
-use sdl2::image::{ImageRWops, InitFlag, Sdl2ImageContext};
+use sdl2::image::{InitFlag, Sdl2ImageContext};
 use sdl2::pixels::{Color, PixelFormatEnum};
-use sdl2::rect::Rect;
 use sdl2::render::{BlendMode, SurfaceCanvas};
-use sdl2::rwops::RWops;
 use sdl2::surface::Surface;
 use sdl2::ttf::Sdl2TtfContext;
 use std::cell::RefCell;
+use std::mem;
 use std::rc::Rc;
 use webp::{AnimEncoder, AnimFrame, WebPConfig, WebPMemory};
 
-const WIDTH: u32 = 1250;
-const HEIGHT: u32 = 776;
+pub const WIDTH: u32 = 1250;
+pub const HEIGHT: u32 = 776;
+pub const SWITZERLAND_COLOR: Color = Color::RGB(218, 41, 28);
+
 const FPS: u32 = 60;
 const LANG: &str = "en"; // TODO: Make configurable
-const SWITZERLAND_COLOR: Color = Color::RGB(218, 41, 28);
 
 pub(crate) const PIXEL_FORMAT: PixelFormatEnum = PixelFormatEnum::ABGR8888;
 
 pub struct AnimationGenerator {
     state: RefCell<GeneratorState>,
 
-    root_pane: BuiltPane,
-
-    progress_pane: BuiltPane,
-    calculating_text: BuiltPane,
-    progress_text: BuiltPane,
-    total_text: BuiltPane,
-
-    result_pane: BuiltPane,
-    calculated_text: BuiltPane,
-    power_text: BuiltPane,
-
-    rank_pane: BuiltPane,
-    position_text: BuiltPane,
-    estimate_text: BuiltPane,
-    inner_rank_pane: BuiltPane,
-    rank_text: BuiltPane,
+    calc_rank_pane: BuiltPane,
 
     _sdl_ttf: Sdl2TtfContext,
     _sdl_image: Sdl2ImageContext,
@@ -76,225 +55,13 @@ impl AnimationGenerator {
 
         let bold_font = Rc::new(load_font!(80, "BlitzBold.otf", "FOT-RowdyStd-EB.otf"));
 
-        let root_pane = Pane {
-            rect: Rect::new(0, 0, WIDTH, HEIGHT),
-            children: vec![
-                Pane {
-                    rect: Rect::new(0, 0, 1015, 630),
-                    contents: PaneContents::Image(
-                        RWops::from_bytes(include_bytes!("assets/calc-rank-background.png"))?.load_png()?,
-                    ),
-                    ..Default::default()
-                }
-                .into(),
-                Pane {
-                    rect: Rect::new(0, 190, 68, 68),
-                    contents: PaneContents::Image(
-                        RWops::from_bytes(include_bytes!("assets/swiss-flag.png"))?.load_png()?,
-                    ),
-                    ..Default::default()
-                }
-                .into(),
-                Pane {
-                    rect: Rect::new(0, 2, 811, 10),
-                    contents: PaneContents::Custom(&|canvas, rect| {
-                        for i in 0..101 {
-                            let x = rect.x + i * 8;
-                            // WARNING: filled_circle takes in ABGR instead of RGBA
-                            canvas.filled_circle(
-                                x as i16 + 4,
-                                rect.y as i16 + 4,
-                                2,
-                                (64, 255, 255, 255),
-                            )?;
-                        }
-                        Ok(())
-                    }),
-                    ..Default::default()
-                }
-                .into(),
-                Pane {
-                    name: "progress_pane",
-                    children: vec![
-                        Pane {
-                            name: "calculating_text",
-                            rect: Rect::new(0, 90, 850, 147),
-                            contents: PaneContents::Text {
-                                text: "".into(),
-                                font: bold_font.clone(),
-                                color: Color::WHITE,
-                                scale: (0.6, 0.59),
-                                text_alignment: Alignment::CENTER,
-                            },
-                            ..Default::default()
-                        }
-                        .into(),
-                        Pane {
-                            name: "progress_text",
-                            rect: Rect::new(-54, -108, 200, 206),
-                            contents: PaneContents::Text {
-                                text: "".into(),
-                                font: bold_font.clone(),
-                                color: Color::WHITE,
-                                scale: (1.2, 1.19),
-                                text_alignment: Alignment::CENTER,
-                            },
-                            ..Default::default()
-                        }
-                        .into(),
-                        Pane {
-                            name: "total_text",
-                            rect: Rect::new(2, -126, 200, 150),
-                            anchor: Alignment::LEFT,
-                            contents: PaneContents::Text {
-                                text: "".into(),
-                                font: bold_font.clone(),
-                                color: Color::WHITE,
-                                scale: (0.8, 0.8),
-                                text_alignment: Alignment::LEFT,
-                            },
-                            ..Default::default()
-                        }
-                        .into(),
-                    ],
-                    ..Default::default()
-                }
-                .into(),
-                Pane {
-                    name: "result_pane",
-                    alpha: 0,
-                    children: vec![
-                        Pane {
-                            name: "calculated_text",
-                            rect: Rect::new(0, 90, 850, 147),
-                            contents: PaneContents::Text {
-                                text: "".into(),
-                                font: bold_font.clone(),
-                                color: SWITZERLAND_COLOR,
-                                scale: (0.6, 0.59),
-                                text_alignment: Alignment::CENTER,
-                            },
-                            ..Default::default()
-                        }
-                        .into(),
-                        Pane {
-                            name: "power_text",
-                            rect: Rect::new(5, -106, 800, 294),
-                            contents: PaneContents::Text {
-                                text: "".into(),
-                                font: bold_font.clone(),
-                                color: Color::WHITE,
-                                scale: (1.2, 1.19),
-                                text_alignment: Alignment::CENTER,
-                            },
-                            ..Default::default()
-                        }
-                        .into(),
-                    ],
-                    ..Default::default()
-                }
-                .into(),
-                Pane {
-                    name: "rank_pane",
-                    rect: Rect::new(-12, -93, 45, 60),
-                    alpha: 0,
-                    children: vec![
-                        Pane {
-                            name: "position_text",
-                            rect: Rect::new(0, 180, 600, 105),
-                            contents: PaneContents::Text {
-                                text: "".into(),
-                                font: bold_font.clone(),
-                                color: SWITZERLAND_COLOR,
-                                scale: (0.6, 0.59),
-                                text_alignment: Alignment::CENTER,
-                            },
-                            ..Default::default()
-                        }
-                        .into(),
-                        Pane {
-                            name: "estimate_text",
-                            rect: Rect::new(-170, 47, 300, 93),
-                            parent_anchor: Alignment::LEFT,
-                            contents: PaneContents::Text {
-                                text: "".into(),
-                                font: bold_font.clone(),
-                                color: Color::RGB(0x80, 0x80, 0x80),
-                                scale: (0.6, 0.59),
-                                text_alignment: Alignment::CENTER,
-                            },
-                            ..Default::default()
-                        }
-                        .into(),
-                        Pane {
-                            name: "inner_rank_pane",
-                            rect: Rect::new(7, -52, 45, 60),
-                            alpha: 0,
-                            children: vec![
-                                Pane {
-                                    name: "rank_text",
-                                    rect: Rect::new(0, 8, 680, 180),
-                                    parent_anchor: Alignment::LEFT,
-                                    contents: PaneContents::Text {
-                                        text: "".into(),
-                                        font: bold_font.clone(),
-                                        color: Color::WHITE,
-                                        scale: (1.2, 1.19),
-                                        text_alignment: Alignment::CENTER,
-                                    },
-                                    ..Default::default()
-                                }
-                                .into(),
-                            ],
-                            ..Default::default()
-                        }
-                        .into(),
-                    ],
-                    ..Default::default()
-                }
-                .into(),
-            ],
-            ..Default::default()
-        }
-        .build();
-
-        let progress_pane = root_pane.child(&["progress_pane"]).unwrap();
-        let calculating_text = progress_pane.child(&["calculating_text"]).unwrap();
-        let progress_text = progress_pane.child(&["progress_text"]).unwrap();
-        let total_text = progress_pane.child(&["total_text"]).unwrap();
-
-        let result_pane = root_pane.child(&["result_pane"]).unwrap();
-        let calculated_text = result_pane.child(&["calculated_text"]).unwrap();
-        let power_text = result_pane.child(&["power_text"]).unwrap();
-
-        let rank_pane = root_pane.child(&["rank_pane"]).unwrap();
-        let position_text = rank_pane.child(&["position_text"]).unwrap();
-        let estimate_text = rank_pane.child(&["estimate_text"]).unwrap();
-        let inner_rank_pane = rank_pane.child(&["inner_rank_pane"]).unwrap();
-        let rank_text = inner_rank_pane.child(&["rank_text"]).unwrap();
-
         Ok(Self {
             state: RefCell::new(GeneratorState {
                 canvas: Surface::new(WIDTH, HEIGHT, PIXEL_FORMAT)?.into_canvas()?,
                 frames: vec![],
             }),
 
-            root_pane,
-
-            progress_pane,
-            calculating_text,
-            progress_text,
-            total_text,
-
-            result_pane,
-            calculated_text,
-            power_text,
-
-            rank_pane,
-            position_text,
-            estimate_text,
-            inner_rank_pane,
-            rank_text,
+            calc_rank_pane: calc_rank_pane::calc_rank_pane(bold_font.clone())?,
 
             _sdl: sdl,
             _sdl_image: sdl_image,
@@ -332,9 +99,8 @@ impl AnimationGenerator {
             )?,
             _ => todo!("Implement other statuses"),
         }
-        self.reset_ui();
 
-        Ok(std::mem::take(&mut self.state.borrow_mut().frames))
+        Ok(mem::take(&mut self.state.borrow_mut().frames))
     }
 
     fn generate_calculating(
@@ -344,95 +110,139 @@ impl AnimationGenerator {
         calculated_power: Option<f64>,
         estimated_rank: Option<u32>,
     ) -> Result<()> {
+        use calc_rank_pane::*;
+
         let mut state = self.state.borrow_mut();
 
-        self.calculating_text
-            .set_text(get_text(LANG, "calculating"));
-        self.progress_text.set_text((progress - 1).to_string());
-        self.total_text.set_text(format!("/{total}"));
+        let progress_pane = self.calc_rank_pane.child(&["progress_pane"]).unwrap();
+        let calculating_text = progress_pane.child(&["calculating_text"]).unwrap();
+        let progress_text = progress_pane.child(&["progress_text"]).unwrap();
+        let total_text = progress_pane.child(&["total_text"]).unwrap();
+
+        let result_pane = self.calc_rank_pane.child(&["result_pane"]).unwrap();
+        let calculated_text = result_pane.child(&["calculated_text"]).unwrap();
+        let power_text = result_pane.child(&["power_text"]).unwrap();
+
+        let rank_pane = self.calc_rank_pane.child(&["rank_pane"]).unwrap();
+        let position_text = rank_pane.child(&["position_text"]).unwrap();
+        let estimate_text = rank_pane.child(&["estimate_text"]).unwrap();
+        let inner_rank_pane = rank_pane.child(&["inner_rank_pane"]).unwrap();
+        let rank_text = inner_rank_pane.child(&["rank_text"]).unwrap();
+
+        self.calc_rank_pane.edit(|x| {
+            x.scale = 1.0;
+            x.alpha = 255;
+        });
+
+        calculating_text.set_text(get_text(LANG, "calculating"));
+        progress_pane.edit(|x| {
+            x.scale = 1.0;
+            x.alpha = 255;
+        });
+        progress_text.edit(|x| {
+            x.scale = 1.0;
+            x.alpha = 255;
+            x.set_text((progress - 1).to_string());
+        });
+        total_text.set_text(format!("/{total}"));
+
+        result_pane.edit(|x| {
+            x.alpha = 0;
+        });
+        power_text.edit(|x| {
+            x.scale = 1.0;
+        });
+
+        rank_pane.edit(|x| {
+            x.alpha = 0;
+        });
+        inner_rank_pane.edit(|x| {
+            x.scale = 1.0;
+            x.alpha = 0;
+        });
 
         state.animate_transition(
-            &self.root_pane,
-            &self.root_pane,
+            &self.calc_rank_pane,
+            &self.calc_rank_pane,
             WINDOW_IN_SCALE,
             WINDOW_IN_ALPHA,
             60,
         )?;
 
-        self.progress_text.edit(|x| x.alpha = 0);
-        state.render_frame(&self.root_pane, 1)?;
+        progress_text.edit(|x| x.alpha = 0);
+        state.render_frame(&self.calc_rank_pane, 1)?;
 
-        self.progress_text.set_text(progress.to_string());
+        progress_text.set_text(progress.to_string());
         state.animate_transition(
-            &self.root_pane,
-            &self.progress_text,
+            &self.calc_rank_pane,
+            &progress_text,
             PROGRESS_IN_SCALE,
             PROGRESS_IN_ALPHA,
             120,
         )?;
 
         if let Some(calculated_power) = calculated_power {
-            self.calculated_text.set_text(get_text(LANG, "calculated"));
-            self.power_text.set_text(format!("{:.1}", calculated_power));
+            calculated_text.set_text(get_text(LANG, "calculated"));
+            power_text.set_text(format!("{:.1}", calculated_power));
 
             for frame in 0..=RESULT_POWER_SCALE.duration() as u32 {
-                self.progress_pane.edit(|x| {
+                progress_pane.edit(|x| {
                     x.scale = RESULT_PROGRESS_SCALE.value_at(frame as f64);
                     x.alpha = RESULT_PROGRESS_ALPHA.value_at(frame as f64) as u8;
                 });
-                self.result_pane.edit(|x| {
+                result_pane.edit(|x| {
                     x.alpha = RESULT_PANE_ALPHA.value_at(frame as f64) as u8;
                 });
-                self.power_text.edit(|x| {
+                power_text.edit(|x| {
                     x.scale = RESULT_POWER_SCALE.value_at(frame as f64);
                 });
-                state.render_frame(&self.root_pane, 1)?;
+                state.render_frame(&self.calc_rank_pane, 1)?;
             }
 
-            self.progress_pane.edit(|x| {
+            progress_pane.edit(|x| {
                 x.scale = 1.0;
                 x.alpha = 0;
             });
-            self.result_pane.edit(|x| {
+            result_pane.edit(|x| {
                 x.alpha = 255;
             });
-            self.power_text.edit(|x| {
+            power_text.edit(|x| {
                 x.scale = 1.0;
             });
-            state.render_frame(&self.root_pane, 180)?;
+            state.render_frame(&self.calc_rank_pane, 180)?;
         }
 
         if let Some(estimated_rank) = estimated_rank {
             state.animate_transition(
-                &self.root_pane,
-                &self.root_pane,
+                &self.calc_rank_pane,
+                &self.calc_rank_pane,
                 WINDOW_OUT_SCALE,
                 WINDOW_OUT_ALPHA,
                 6,
             )?;
 
-            self.result_pane.edit(|x| x.alpha = 0);
-            self.rank_pane.edit(|x| x.alpha = 255);
+            result_pane.edit(|x| x.alpha = 0);
+            rank_pane.edit(|x| x.alpha = 255);
 
-            self.position_text.set_text(get_text(LANG, "position"));
-            self.estimate_text.set_text(get_text(LANG, "estimate"));
-            self.rank_text.set_text(get_text_fmt(
+            position_text.set_text(get_text(LANG, "position"));
+            estimate_text.set_text(get_text(LANG, "estimate"));
+            rank_text.set_text(get_text_fmt(
                 LANG,
                 "rank_value",
-                vec![("rank", estimated_rank.to_string())],
+                [(FmtKey::Rank, &estimated_rank.to_string())],
             ));
 
             state.animate_transition(
-                &self.root_pane,
-                &self.root_pane,
+                &self.calc_rank_pane,
+                &self.calc_rank_pane,
                 WINDOW_IN_SCALE,
                 WINDOW_IN_ALPHA,
                 6,
             )?;
 
             state.animate_transition(
-                &self.root_pane,
-                &self.inner_rank_pane,
+                &self.calc_rank_pane,
+                &inner_rank_pane,
                 RESULT_RANK_SCALE,
                 RESULT_RANK_ALPHA,
                 120,
@@ -440,8 +250,8 @@ impl AnimationGenerator {
         }
 
         state.animate_transition(
-            &self.root_pane,
-            &self.root_pane,
+            &self.calc_rank_pane,
+            &self.calc_rank_pane,
             WINDOW_OUT_SCALE,
             WINDOW_OUT_ALPHA,
             90,
@@ -449,40 +259,6 @@ impl AnimationGenerator {
         state.push_frame(0);
 
         Ok(())
-    }
-
-    fn reset_ui(&self) {
-        self.root_pane.edit(|x| {
-            x.scale = 1.0;
-            x.alpha = 255;
-        });
-
-        self.progress_pane.edit(|x| {
-            x.scale = 1.0;
-            x.alpha = 255;
-        });
-        self.progress_text.edit(|x| {
-            x.scale = 1.0;
-            x.alpha = 255;
-            x.set_text("");
-        });
-        self.total_text.set_text("");
-
-        self.result_pane.edit(|x| {
-            x.alpha = 0;
-        });
-        self.power_text.edit(|x| {
-            x.scale = 1.0;
-        });
-
-        self.rank_pane.edit(|x| {
-            x.alpha = 0;
-        });
-        self.inner_rank_pane.edit(|x| {
-            x.scale = 1.0;
-            x.alpha = 0;
-        });
-        self.rank_text.set_text("");
     }
 }
 

@@ -8,6 +8,7 @@ use sdl2::render::SurfaceCanvas;
 use sdl2::surface::Surface;
 use std::borrow::Cow;
 use std::cell::{Ref, RefCell};
+use std::mem;
 use std::rc::Rc;
 
 pub struct Pane {
@@ -23,22 +24,7 @@ pub struct Pane {
 
 impl Default for Pane {
     fn default() -> Self {
-        const DEFAULT_RECT: sdl2::sys::SDL_Rect = sdl2::sys::SDL_Rect {
-            x: 0,
-            y: 0,
-            w: 1,
-            h: 1,
-        };
-        Self {
-            name: "",
-            rect: DEFAULT_RECT.into(),
-            scale: 1.0,
-            alpha: 255,
-            anchor: Alignment::CENTER,
-            parent_anchor: Alignment::CENTER,
-            contents: PaneContents::Null,
-            children: vec![],
-        }
+        Self::EMPTY
     }
 }
 
@@ -49,6 +35,24 @@ impl From<Pane> for Rc<RefCell<Pane>> {
 }
 
 impl Pane {
+    pub const EMPTY: Self = Self {
+        name: "",
+        rect: unsafe {
+            mem::transmute::<sdl2::sys::SDL_Rect, Rect>(sdl2::sys::SDL_Rect {
+                x: 0,
+                y: 0,
+                w: 30,
+                h: 40,
+            })
+        },
+        scale: 1.0,
+        alpha: 255,
+        anchor: Alignment::CENTER,
+        parent_anchor: Alignment::CENTER,
+        contents: PaneContents::Null,
+        children: vec![],
+    };
+
     pub fn build(self) -> BuiltPane {
         BuiltPane(self.into())
     }
