@@ -15,20 +15,25 @@ fn main() {
             serde_json::from_slice(&lang_data).unwrap();
         let get_translation = |base, sub| lang_data.get(&base).unwrap().get(&sub).unwrap();
 
+        let lang_name = language_path.file_name().to_str().unwrap()[..2].to_string();
         texts_by_language.entry(
-            language_path.file_name().to_str().unwrap()[..2].to_string(),
+            lang_name.to_string(),
             phf_codegen::Map::new()
                 .entry(
                     "calculating",
-                    lit(&format!(
-                        "Switzerland Power {}", // TODO: Localize Switzerland Power
-                        get_translation("LayoutMsg/Tml_ListRecord_00", "030")
-                    )),
+                    lit(&match lang_name.as_str() {
+                        "en" => "Calculating Switzerland Power...".to_string(),
+                        "ja" => "Switzerland パワー 計測中…".to_string(),
+                        _ => format!(
+                            "Switzerland Power {}",
+                            get_translation("LayoutMsg/Tml_ListRecord_00", "030")
+                        ),
+                    }),
                 )
                 .entry(
                     "calculated",
                     lit(get_translation(
-                        "LayoutMsg/Lobby_ResultPower_00",
+                        "LayoutMsg/Lobby_ResultDialogue_00",
                         "T_Rank_00",
                     )),
                 )
