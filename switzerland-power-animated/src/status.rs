@@ -10,9 +10,17 @@ pub enum PowerStatus {
         rank: u32,
     },
     SetPlayed {
+        matches: [MatchOutcome; 5],
         old_power: f64,
         new_power: f64,
         old_rank: u32,
         new_rank: u32,
     },
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum MatchOutcome {
+    Unplayed,
+    Win,
+    Lose,
 }

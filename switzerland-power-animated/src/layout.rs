@@ -10,6 +10,8 @@ use std::borrow::Cow;
 use std::cell::{Ref, RefCell};
 use std::mem;
 use std::rc::Rc;
+use sdl2::image::ImageRWops;
+use sdl2::rwops::RWops;
 
 pub struct Pane {
     pub name: &'static str,
@@ -152,6 +154,10 @@ pub enum PaneContents {
 }
 
 impl PaneContents {
+    pub fn image_png(bytes: &[u8]) -> Result<Self> {
+        Ok(Self::Image(RWops::from_bytes(bytes)?.load_png()?))
+    }
+
     fn render(&self, canvas: &mut SurfaceCanvas, viewport: Rect, scale: f64) -> Result<()> {
         match self {
             PaneContents::Null => {}
@@ -226,25 +232,39 @@ impl BuiltPane {
     }
 
     pub fn child(&self, path: &[&str]) -> Option<BuiltPane> {
-        if path.is_empty() {
-            return Some(self.clone());
-        }
-
-        if let [single_name] = *path {
-            return self
+        match *path {
+            [] => Some(self.clone()),
+            [name] => self
                 .pane()
                 .children
                 .iter()
-                .find(|x| x.borrow().name == single_name)
-                .map(|x| BuiltPane(x.clone()));
+                .find(|x| x.borrow().name == name)
+                .map(|x| BuiltPane(x.clone())),
+            [name, ..] => self.pane()
+                .children
+                .iter()
+                .filter(|x| x.borrow().name == name)
+                .filter_map(|x| BuiltPane(x.clone()).child(&path[1..]))
+                .next()
         }
+    }
 
-        let search_name = *path.first().unwrap();
-        self.pane()
-            .children
-            .iter()
-            .filter(|x| x.borrow().name == search_name)
-            .filter_map(|x| BuiltPane(x.clone()).child(&path[1..]))
-            .next()
+    pub fn children(&self, path: &[&str]) -> Vec<BuiltPane> {
+        match *path {
+            [] => vec![self.clone()],
+            [name] => self
+                .pane()
+                .children
+                .iter()
+                .filter(|x| x.borrow().name == name)
+                .map(|x| BuiltPane(x.clone()))
+                .collect(),
+            [name, ..] => self.pane()
+                .children
+                .iter()
+                .filter(|x| x.borrow().name == name)
+                .flat_map(|x| BuiltPane(x.clone()).children(&path[1..]))
+                .collect()
+        }
     }
 }

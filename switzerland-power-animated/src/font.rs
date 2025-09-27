@@ -31,7 +31,7 @@ impl<'ttf> FontSet<'ttf> {
 
     pub fn render<'a>(&self, color: impl Into<Color>, text: &str) -> Result<Surface<'a>> {
         if text.is_empty() {
-            return Ok(self.fonts.first().unwrap().render(text).blended(color)?);
+            return Ok(Surface::new(0, 0, PIXEL_FORMAT)?);
         }
 
         let result = match text

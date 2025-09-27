@@ -9,25 +9,21 @@ use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::rwops::RWops;
 use std::rc::Rc;
+use crate::generator::{HEIGHT, WIDTH};
 
 pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
     Ok(Pane {
-        rect: Rect::new(0, 0, crate::generator::WIDTH, crate::generator::HEIGHT),
+        rect: Rect::new(0, 0, WIDTH, HEIGHT),
         children: vec![
             Pane {
                 rect: Rect::new(0, 0, 1015, 630),
-                contents: PaneContents::Image(
-                    RWops::from_bytes(include_bytes!("../assets/calc-rank-background.png"))?
-                        .load_png()?,
-                ),
+                contents: PaneContents::image_png(include_bytes!("images/calc-rank-background.png"))?,
                 ..Pane::EMPTY
             }
             .into(),
             Pane {
                 rect: Rect::new(0, 190, 68, 68),
-                contents: PaneContents::Image(
-                    RWops::from_bytes(include_bytes!("../assets/swiss-flag.png"))?.load_png()?,
-                ),
+                contents: PaneContents::image_png(include_bytes!("images/swiss-flag.png"))?,
                 ..Pane::EMPTY
             }
             .into(),
@@ -56,7 +52,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         name: "calculating_text",
                         rect: Rect::new(0, 90, 850, 147),
                         contents: PaneContents::Text {
-                            text: "".into(),
+                            text: "Calculating".into(),
                             font: bold_font.clone(),
                             color: Color::WHITE,
                             scale: (0.6, 0.59),
@@ -69,7 +65,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         name: "progress_text",
                         rect: Rect::new(-54, -108, 200, 206),
                         contents: PaneContents::Text {
-                            text: "".into(),
+                            text: "3".into(),
                             font: bold_font.clone(),
                             color: Color::WHITE,
                             scale: (1.2, 1.19),
@@ -83,7 +79,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         rect: Rect::new(2, -126, 200, 150),
                         anchor: Alignment::LEFT,
                         contents: PaneContents::Text {
-                            text: "".into(),
+                            text: "5".into(),
                             font: bold_font.clone(),
                             color: Color::WHITE,
                             scale: (0.8, 0.8),
@@ -104,7 +100,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         name: "calculated_text",
                         rect: Rect::new(0, 90, 850, 147),
                         contents: PaneContents::Text {
-                            text: "".into(),
+                            text: "Calculated".into(),
                             font: bold_font.clone(),
                             color: crate::generator::SWITZERLAND_COLOR,
                             scale: (0.6, 0.59),
@@ -117,7 +113,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         name: "power_text",
                         rect: Rect::new(5, -106, 800, 294),
                         contents: PaneContents::Text {
-                            text: "".into(),
+                            text: "1500.0".into(),
                             font: bold_font.clone(),
                             color: Color::WHITE,
                             scale: (1.2, 1.19),
@@ -139,7 +135,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         name: "position_text",
                         rect: Rect::new(0, 180, 600, 105),
                         contents: PaneContents::Text {
-                            text: "".into(),
+                            text: "Position".into(),
                             font: bold_font.clone(),
                             color: crate::generator::SWITZERLAND_COLOR,
                             scale: (0.6, 0.59),
@@ -153,7 +149,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         rect: Rect::new(-170, 47, 300, 93),
                         parent_anchor: Alignment::LEFT,
                         contents: PaneContents::Text {
-                            text: "".into(),
+                            text: "Estimate".into(),
                             font: bold_font.clone(),
                             color: Color::RGB(0x80, 0x80, 0x80),
                             scale: (0.6, 0.59),
@@ -172,7 +168,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                                 rect: Rect::new(0, 8, 680, 180),
                                 parent_anchor: Alignment::LEFT,
                                 contents: PaneContents::Text {
-                                    text: "".into(),
+                                    text: "#25".into(),
                                     font: bold_font.clone(),
                                     color: Color::WHITE,
                                     scale: (1.2, 1.19),

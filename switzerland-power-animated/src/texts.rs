@@ -25,4 +25,20 @@ pub fn get_text_fmt<const N: usize>(
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, FromStr)]
 pub enum FmtKey {
     Rank,
+    Integer,
+    Fraction,
+}
+
+pub fn format_power(lang: &str, power: f64) -> String {
+    let power = (power * 10.0) as u32;
+    let integer = power / 10;
+    let fraction = power % 10;
+    get_text_fmt(
+        lang,
+        "power_value",
+        [
+            (FmtKey::Integer, &integer.to_string()),
+            (FmtKey::Fraction, &fraction.to_string()),
+        ],
+    )
 }

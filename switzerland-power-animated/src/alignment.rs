@@ -33,8 +33,9 @@ pub struct Alignment {
 }
 
 impl Alignment {
-    pub const CENTER: Self = Self::new(HorizontalAlignment::Center, VerticalAlignment::Middle);
     pub const LEFT: Self = Self::new(HorizontalAlignment::Left, VerticalAlignment::Middle);
+    pub const CENTER: Self = Self::new(HorizontalAlignment::Center, VerticalAlignment::Middle);
+    pub const BOTTOM: Self = Self::new(HorizontalAlignment::Center, VerticalAlignment::Bottom);
 
     pub const fn new(horizontal: HorizontalAlignment, vertical: VerticalAlignment) -> Self {
         Self {

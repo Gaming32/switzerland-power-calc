@@ -1,10 +1,10 @@
-use crate::PowerStatus;
+use crate::{MatchOutcome, PowerStatus};
 use crate::Result;
 use crate::animation::AnimationTrack;
 use crate::font::FontSet;
 use crate::layout::BuiltPane;
-use crate::panes::calc_rank_pane;
-use crate::texts::{FmtKey, get_text, get_text_fmt};
+use crate::panes::{calc_rank_pane, power_progress_pane};
+use crate::texts::{FmtKey, get_text, get_text_fmt, format_power};
 use sdl2::Sdl;
 use sdl2::image::{InitFlag, Sdl2ImageContext};
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -21,7 +21,7 @@ pub const HEIGHT: u32 = 776;
 pub const SWITZERLAND_COLOR: Color = Color::RGB(218, 41, 28);
 
 const FPS: u32 = 60;
-const LANG: &str = "en"; // TODO: Make configurable
+const LANG: &str = "USen"; // TODO: Make configurable
 
 pub(crate) const PIXEL_FORMAT: PixelFormatEnum = PixelFormatEnum::ABGR8888;
 
@@ -29,6 +29,7 @@ pub struct AnimationGenerator {
     state: RefCell<GeneratorState>,
 
     calc_rank_pane: BuiltPane,
+    change_power_pane: BuiltPane,
 
     _sdl_ttf: Sdl2TtfContext,
     _sdl_image: Sdl2ImageContext,
@@ -47,7 +48,7 @@ impl AnimationGenerator {
                     unsafe { core::mem::transmute::<&_, &'static _>(&sdl_ttf) },
                     $point_size,
                     &[$(
-                        include_bytes!(concat!("assets/", $font))
+                        include_bytes!(concat!("fonts/", $font))
                     ),+],
                 )?
             };
@@ -62,6 +63,7 @@ impl AnimationGenerator {
             }),
 
             calc_rank_pane: calc_rank_pane::calc_rank_pane(bold_font.clone())?,
+            change_power_pane: power_progress_pane::power_progress_pane(bold_font.clone())?,
 
             _sdl: sdl,
             _sdl_image: sdl_image,
@@ -79,9 +81,7 @@ impl AnimationGenerator {
             .await
             .unwrap()
     }
-}
 
-impl AnimationGenerator {
     fn generate_frames(&self, status: PowerStatus) -> Result<FramesVec> {
         match status {
             PowerStatus::Calculating { progress, total } => {
@@ -97,7 +97,9 @@ impl AnimationGenerator {
                 Some(power),
                 Some(rank),
             )?,
-            _ => todo!("Implement other statuses"),
+            PowerStatus::SetPlayed { matches, old_power, new_power, old_rank, new_rank } => {
+                self.generate_set_played(matches, old_power, new_power, old_rank, new_rank)?;
+            },
         }
 
         Ok(mem::take(&mut self.state.borrow_mut().frames))
@@ -183,7 +185,7 @@ impl AnimationGenerator {
 
         if let Some(calculated_power) = calculated_power {
             calculated_text.set_text(get_text(LANG, "calculated"));
-            power_text.set_text(format!("{:.1}", calculated_power));
+            power_text.set_text(format_power(LANG, calculated_power));
 
             for frame in 0..=RESULT_POWER_SCALE.duration() as u32 {
                 progress_pane.edit(|x| {
@@ -257,6 +259,22 @@ impl AnimationGenerator {
             90,
         )?;
         state.push_frame(0);
+
+        Ok(())
+    }
+
+    fn generate_set_played(
+        &self,
+        matches: [MatchOutcome; 5],
+        old_power: f64,
+        new_power: f64,
+        old_rank: u32,
+        new_rank: u32,
+    ) -> Result<()> {
+        use power_progress_pane::*;
+
+        let mut state = self.state.borrow_mut();
+        state.render_frame(&self.change_power_pane, 1)?;
 
         Ok(())
     }

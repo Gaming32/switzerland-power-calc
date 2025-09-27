@@ -15,15 +15,30 @@ fn main() {
             serde_json::from_slice(&lang_data).unwrap();
         let get_translation = |base, sub| lang_data.get(&base).unwrap().get(&sub).unwrap();
 
-        let lang_name = language_path.file_name().to_str().unwrap()[..2].to_string();
+        let lang_name = language_path.file_name().to_str().unwrap().strip_suffix(".json").unwrap().to_string();
         texts_by_language.entry(
             lang_name.to_string(),
             phf_codegen::Map::new()
                 .entry(
+                    "language_name",
+                    lit(match lang_name.as_str() {
+                        "CNzh" => "中文 (中国)",
+                        "EUde" => "Deutsch",
+                        "EUen" => "English (United Kingdom)",
+                        "EUit" => "italiano",
+                        "EUnl" => "Nederlands",
+                        "EUru" => "русский",
+                        "KRko" => "한국어",
+                        "TWzh" => "中文 (台灣)",
+                        "USen" => "English (United States)",
+                        name => get_translation("CommonMsg/RegionLanguageID", name)
+                    })
+                )
+                .entry(
                     "calculating",
                     lit(match lang_name.as_str() {
-                        "en" => "Calculating Switzerland Power...",
-                        "ja" => "Switzerland パワー 計測中…",
+                        "USen" | "EUen" => "Calculating Switzerland Power...",
+                        "JPja" => "Switzerland パワー 計測中…",
                         _ => get_translation("LayoutMsg/Tml_ListRecord_00", "030"),
                     }),
                 )
@@ -33,6 +48,13 @@ fn main() {
                         "LayoutMsg/Lobby_ResultDialogue_00",
                         "T_Rank_00",
                     )),
+                )
+                .entry(
+                    "power_value",
+                    lit(&get_translation("CommonMsg/UnitName", "XPower")
+                        .replace("[group=0002 type=0000 params=00 04 00 00]", "{integer}")
+                        .replace("[group=0002 type=0000 params=01 01 00 00]", "{fraction}")
+                    ),
                 )
                 .entry(
                     "position",

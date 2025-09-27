@@ -10,4 +10,4 @@ mod texts;
 
 pub use error::{Error, Result};
 pub use generator::AnimationGenerator;
-pub use status::PowerStatus;
+pub use status::{PowerStatus, MatchOutcome};
