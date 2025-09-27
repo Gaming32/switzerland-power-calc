@@ -1,3 +1,5 @@
+use crate::PowerStatus;
+use crate::Result;
 use crate::alignment::Alignment;
 use crate::animation::AnimationTrack;
 use crate::animations::{
@@ -7,8 +9,7 @@ use crate::animations::{
 use crate::font::FontSet;
 use crate::layout::{BuiltPane, Pane, PaneContents};
 use crate::texts::get_text;
-use crate::PowerStatus;
-use crate::Result;
+use sdl2::Sdl;
 use sdl2::gfx::primitives::DrawRenderer;
 use sdl2::image::{ImageRWops, InitFlag, Sdl2ImageContext};
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -17,7 +18,6 @@ use sdl2::render::{BlendMode, SurfaceCanvas};
 use sdl2::rwops::RWops;
 use sdl2::surface::Surface;
 use sdl2::ttf::Sdl2TtfContext;
-use sdl2::Sdl;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use webp::{AnimEncoder, AnimFrame, WebPConfig, WebPMemory};
@@ -202,12 +202,7 @@ impl AnimationGenerator {
             .child(&["progress_pane", "progress_text"])
             .unwrap();
 
-        state.animate_transition(
-            &root_pane,
-            &root_pane,
-            WINDOW_IN_SCALE,
-            WINDOW_IN_ALPHA,
-        )?;
+        state.animate_transition(&root_pane, &root_pane, WINDOW_IN_SCALE, WINDOW_IN_ALPHA)?;
 
         progress_text.edit(|x| x.alpha = 0);
         state.render_frame(&root_pane, 1)?;
@@ -224,12 +219,7 @@ impl AnimationGenerator {
             PROGRESS_IN_ALPHA,
         )?;
 
-        state.animate_transition(
-            &root_pane,
-            &root_pane,
-            WINDOW_OUT_SCALE,
-            WINDOW_OUT_ALPHA,
-        )?;
+        state.animate_transition(&root_pane, &root_pane, WINDOW_OUT_SCALE, WINDOW_OUT_ALPHA)?;
 
         state.push_frame(0);
 
@@ -257,14 +247,14 @@ impl GeneratorState {
                 x.scale = scale_anim.value_at(frame as f64);
                 x.alpha = alpha_anim.value_at(frame as f64) as u8;
             });
-            self.render_frame(&root_pane, 1)?;
+            self.render_frame(root_pane, 1)?;
         }
 
         pane.edit(|x| {
             x.scale = scale_anim.ending_value(1.0);
             x.alpha = alpha_anim.ending_value(255.0) as u8;
         });
-        self.render_frame(&root_pane, 60)?;
+        self.render_frame(root_pane, 60)?;
 
         Ok(())
     }

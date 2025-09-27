@@ -8,7 +8,7 @@ use sdl2::surface::Surface;
 use sdl2::ttf::{Font, Sdl2TtfContext};
 use smallvec::SmallVec;
 
-pub(crate) struct FontSet<'ttf> {
+pub struct FontSet<'ttf> {
     pub fonts: SmallVec<[Font<'ttf, 'static>; 2]>,
 }
 

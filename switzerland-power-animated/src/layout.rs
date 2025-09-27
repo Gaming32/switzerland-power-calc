@@ -1,7 +1,7 @@
+use crate::Result;
 use crate::alignment::Alignment;
 use crate::font::FontSet;
 use crate::generator::PIXEL_FORMAT;
-use crate::Result;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::SurfaceCanvas;
@@ -40,9 +40,9 @@ impl Default for Pane<'_> {
     }
 }
 
-impl<'a> Into<Rc<RefCell<Pane<'a>>>> for Pane<'a> {
-    fn into(self) -> Rc<RefCell<Pane<'a>>> {
-        Rc::new(RefCell::new(self))
+impl<'a> From<Pane<'a>> for Rc<RefCell<Pane<'a>>> {
+    fn from(val: Pane<'a>) -> Self {
+        Rc::new(RefCell::new(val))
     }
 }
 

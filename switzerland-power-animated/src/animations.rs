@@ -22,10 +22,8 @@ pub const PROGRESS_IN_SCALE: AnimationTrack = AnimationTrack::new(&[
     Keyframe::new(0.0, 9.0, 1.0),
 ]);
 
-pub const PROGRESS_IN_ALPHA: AnimationTrack = AnimationTrack::new(&[
-    Keyframe::new(0.0, 0.0, 0.0),
-    Keyframe::new(0.0, 3.0, 255.0)
-]);
+pub const PROGRESS_IN_ALPHA: AnimationTrack =
+    AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 0.0), Keyframe::new(0.0, 3.0, 255.0)]);
 
 pub const WINDOW_OUT_SCALE: AnimationTrack = AnimationTrack::new(&[
     Keyframe::new(0.04875219, 0.0, 1.0),

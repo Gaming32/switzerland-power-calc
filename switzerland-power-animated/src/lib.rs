@@ -4,9 +4,9 @@ mod animations;
 mod error;
 mod font;
 mod generator;
+mod layout;
 mod status;
 mod texts;
-mod layout;
 
 pub use error::{Error, Result};
 pub use generator::AnimationGenerator;
