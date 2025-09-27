@@ -1,11 +1,12 @@
 use crate::Result;
-use crate::animation::AnimationTrack;
+use crate::animation::{AnimationSet, AnimationTrack};
 use crate::font::FontSet;
 use crate::layout::{BuiltPane, PaneContents};
 use crate::panes::{calc_rank_pane, power_progress_pane};
+use crate::status::SetScore;
 use crate::texts::{FmtKey, format_power, get_text, get_text_fmt};
 use crate::{MatchOutcome, PowerStatus};
-use itertools::{izip, Itertools};
+use itertools::izip;
 use sdl2::Sdl;
 use sdl2::image::{InitFlag, Sdl2ImageContext};
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -16,7 +17,6 @@ use std::cell::RefCell;
 use std::mem;
 use std::rc::Rc;
 use webp::{AnimEncoder, AnimFrame, WebPConfig, WebPMemory};
-use crate::status::SetScore;
 
 pub const WIDTH: u32 = 1250;
 pub const HEIGHT: u32 = 776;
@@ -178,68 +178,22 @@ impl AnimationGenerator {
             x.alpha = 0;
         });
 
-        state.animate_transition(
-            &self.calc_rank_pane,
-            &self.calc_rank_pane,
-            WINDOW_IN_SCALE,
-            WINDOW_IN_SCALE,
-            WINDOW_IN_ALPHA,
-            60,
-        )?;
+        state.animate(&self.calc_rank_pane, WINDOW_IN, 60)?;
 
         progress_text.edit(|x| x.alpha = 0);
         state.render_frame(&self.calc_rank_pane, 1)?;
 
         progress_text.set_text(progress.to_string());
-        state.animate_transition(
-            &self.calc_rank_pane,
-            &progress_text,
-            PROGRESS_IN_SCALE,
-            PROGRESS_IN_SCALE,
-            PROGRESS_IN_ALPHA,
-            120,
-        )?;
+        state.animate(&self.calc_rank_pane, PROGRESS_IN, 120)?;
 
         if let Some(calculated_power) = calculated_power {
             calculated_text.set_text(get_text(LANG, "calculated"));
             power_value_text.set_text(format_power(LANG, "power_value", calculated_power));
-
-            for frame in 0..=RESULT_POWER_SCALE.duration() as u32 {
-                progress_pane.edit(|x| {
-                    x.set_scale(RESULT_PROGRESS_SCALE.value_at(frame as f64));
-                    x.alpha = RESULT_PROGRESS_ALPHA.value_at(frame as f64) as u8;
-                });
-                result_pane.edit(|x| {
-                    x.alpha = RESULT_PANE_ALPHA.value_at(frame as f64) as u8;
-                });
-                power_value_text.edit(|x| {
-                    x.set_scale(RESULT_POWER_SCALE.value_at(frame as f64));
-                });
-                state.render_frame(&self.calc_rank_pane, 1)?;
-            }
-
-            progress_pane.edit(|x| {
-                x.set_scale(1.0);
-                x.alpha = 0;
-            });
-            result_pane.edit(|x| {
-                x.alpha = 255;
-            });
-            power_value_text.edit(|x| {
-                x.set_scale(1.0);
-            });
-            state.render_frame(&self.calc_rank_pane, 180)?;
+            state.animate(&self.calc_rank_pane, RESULT_POWER_IN, 180)?;
         }
 
         if let Some(estimated_rank) = estimated_rank {
-            state.animate_transition(
-                &self.calc_rank_pane,
-                &self.calc_rank_pane,
-                WINDOW_OUT_SCALE,
-                WINDOW_OUT_SCALE,
-                WINDOW_OUT_ALPHA,
-                6,
-            )?;
+            state.animate(&self.calc_rank_pane, WINDOW_OUT, 6)?;
 
             result_pane.edit(|x| x.alpha = 0);
             rank_pane.edit(|x| x.alpha = 255);
@@ -252,33 +206,11 @@ impl AnimationGenerator {
                 [(FmtKey::Rank, &estimated_rank.to_string())],
             ));
 
-            state.animate_transition(
-                &self.calc_rank_pane,
-                &self.calc_rank_pane,
-                WINDOW_IN_SCALE,
-                WINDOW_IN_SCALE,
-                WINDOW_IN_ALPHA,
-                6,
-            )?;
-
-            state.animate_transition(
-                &self.calc_rank_pane,
-                &inner_rank_pane,
-                RESULT_RANK_SCALE,
-                RESULT_RANK_SCALE,
-                RESULT_RANK_ALPHA,
-                120,
-            )?;
+            state.animate(&self.calc_rank_pane, WINDOW_IN, 6)?;
+            state.animate(&self.calc_rank_pane, RESULT_RANK_IN, 120)?;
         }
 
-        state.animate_transition(
-            &self.calc_rank_pane,
-            &self.calc_rank_pane,
-            WINDOW_OUT_SCALE,
-            WINDOW_OUT_SCALE,
-            WINDOW_OUT_ALPHA,
-            90,
-        )?;
+        state.animate(&self.calc_rank_pane, WINDOW_OUT, 90)?;
         state.push_frame(0);
 
         Ok(())
@@ -304,8 +236,10 @@ impl AnimationGenerator {
             .unwrap();
         let set_score_text = set_outcome_pane.child(&["set_score_text"]).unwrap();
         let win_lose_panes = set_outcome_pane.children(&["win_lose_pane"]);
-        let win_lose_animation_panes = set_outcome_pane.children(&["win_lose_pane", "animation_pane"]);
-        let win_lose_texts = set_outcome_pane.children(&["win_lose_pane", "animation_pane", "text"]);
+        let win_lose_animation_panes =
+            set_outcome_pane.children(&["win_lose_pane", "animation_pane"]);
+        let win_lose_texts =
+            set_outcome_pane.children(&["win_lose_pane", "animation_pane", "text"]);
 
         let power_pane = self.power_progress_pane.child(&["power_pane"]).unwrap();
         let power_text = power_pane.child(&["power_text"]).unwrap();
@@ -405,6 +339,17 @@ impl GeneratorState {
         self.render_frame(root_pane, end_delay)?;
 
         Ok(())
+    }
+
+    fn animate<const N: usize>(
+        &mut self,
+        root_pane: &BuiltPane,
+        animation: AnimationSet<N>,
+        end_delay: u32,
+    ) -> Result<()> {
+        animation.animate(root_pane, end_delay, |pane, duration| {
+            self.render_frame(pane, duration)
+        })
     }
 
     fn render_frame(&mut self, pane: &BuiltPane, duration_frames: u32) -> Result<()> {

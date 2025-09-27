@@ -2,16 +2,16 @@ use crate::Result;
 use crate::alignment::Alignment;
 use crate::font::FontSet;
 use crate::generator::PIXEL_FORMAT;
+use sdl2::image::ImageRWops;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::SurfaceCanvas;
+use sdl2::rwops::RWops;
 use sdl2::surface::Surface;
 use std::borrow::Cow;
 use std::cell::{Ref, RefCell};
 use std::mem;
 use std::rc::Rc;
-use sdl2::image::ImageRWops;
-use sdl2::rwops::RWops;
 
 #[derive(Clone)]
 pub struct Pane {
@@ -62,7 +62,11 @@ impl Pane {
         self.set_text_and_color(new_text, None);
     }
 
-    pub fn set_text_and_color(&mut self, new_text: impl Into<Cow<'static, str>>, new_color: impl Into<Option<Color>>) {
+    pub fn set_text_and_color(
+        &mut self,
+        new_text: impl Into<Cow<'static, str>>,
+        new_color: impl Into<Option<Color>>,
+    ) {
         if let PaneContents::Text { text, color, .. } = &mut self.contents {
             *text = new_text.into();
             if let Some(new_color) = new_color.into() {
@@ -107,7 +111,9 @@ impl Pane {
 
         match self.alpha {
             0 => {}
-            255 => self.render_internal(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?,
+            255 => {
+                self.render_internal(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?
+            }
             alpha => {
                 let mut sub_canvas = Surface::new(
                     canvas.surface().width(),
@@ -115,7 +121,12 @@ impl Pane {
                     PIXEL_FORMAT,
                 )?
                 .into_canvas()?;
-                self.render_internal(&mut sub_canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?;
+                self.render_internal(
+                    &mut sub_canvas,
+                    draw_rect,
+                    accumulated_x_scale,
+                    accumulated_y_scale,
+                )?;
                 sub_canvas.surface_mut().set_alpha_mod(alpha);
                 sub_canvas
                     .surface()
@@ -135,10 +146,13 @@ impl Pane {
         let old_scale = canvas.scale();
         canvas.set_scale(accumulated_x_scale as f32, accumulated_y_scale as f32)?;
 
-        self.contents.render(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?;
+        self.contents
+            .render(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?;
 
         for child in &self.children {
-            child.pane().render(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?;
+            child
+                .pane()
+                .render(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?;
         }
 
         canvas.set_scale(old_scale.0, old_scale.1)?;
@@ -166,7 +180,13 @@ impl PaneContents {
         Ok(Self::Image(Rc::new(RWops::from_bytes(bytes)?.load_png()?)))
     }
 
-    fn render(&self, canvas: &mut SurfaceCanvas, viewport: Rect, x_scale: f64, y_scale: f64) -> Result<()> {
+    fn render(
+        &self,
+        canvas: &mut SurfaceCanvas,
+        viewport: Rect,
+        x_scale: f64,
+        y_scale: f64,
+    ) -> Result<()> {
         match self {
             PaneContents::Null => {}
             PaneContents::Image(image) => {
@@ -237,7 +257,11 @@ impl BuiltPane {
         self.edit(|x| x.set_text(new_text))
     }
 
-    pub fn set_text_and_color(&self, new_text: impl Into<Cow<'static, str>>, new_color: impl Into<Option<Color>>) {
+    pub fn set_text_and_color(
+        &self,
+        new_text: impl Into<Cow<'static, str>>,
+        new_color: impl Into<Option<Color>>,
+    ) {
         self.edit(|x| x.set_text_and_color(new_text, new_color))
     }
 
@@ -256,12 +280,13 @@ impl BuiltPane {
                 .iter()
                 .find(|x| x.name() == name)
                 .cloned(),
-            [name, ..] => self.pane()
+            [name, ..] => self
+                .pane()
                 .children
                 .iter()
                 .filter(|x| x.name() == name)
                 .filter_map(|x| x.child(&path[1..]))
-                .next()
+                .next(),
         }
     }
 
@@ -275,12 +300,13 @@ impl BuiltPane {
                 .filter(|x| x.name() == name)
                 .cloned()
                 .collect(),
-            [name, ..] => self.pane()
+            [name, ..] => self
+                .pane()
                 .children
                 .iter()
                 .filter(|x| x.name() == name)
                 .flat_map(|x| x.children(&path[1..]))
-                .collect()
+                .collect(),
         }
     }
 }

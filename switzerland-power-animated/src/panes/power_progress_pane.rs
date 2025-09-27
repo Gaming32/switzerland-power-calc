@@ -1,12 +1,12 @@
 use crate::Result;
 use crate::alignment::Alignment;
+use crate::animation::{AnimationTrack, Keyframe};
 use crate::font::FontSet;
 use crate::generator::{HEIGHT, WIDTH};
 use crate::layout::{BuiltPane, Pane, PaneContents};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use std::rc::Rc;
-use crate::animation::{AnimationTrack, Keyframe};
 
 pub const WIN_COLOR: Color = Color::RGB(233, 255, 0);
 pub const LOSE_COLOR: Color = Color::RGB(43, 24, 255);
@@ -80,7 +80,8 @@ pub fn power_progress_pane(
                             text_alignment: Alignment::LEFT,
                         },
                         ..Pane::EMPTY
-                    }.build(),
+                    }
+                    .build(),
                     Pane {
                         name: "power_value_text",
                         rect: Rect::new(0, -22, 700, 150),
@@ -92,7 +93,8 @@ pub fn power_progress_pane(
                             text_alignment: Alignment::CENTER,
                         },
                         ..Pane::EMPTY
-                    }.build(),
+                    }
+                    .build(),
                     Pane {
                         name: "power_diff",
                         rect: Rect::new(341, 87, 158, 163),
@@ -102,9 +104,12 @@ pub fn power_progress_pane(
                                 name: "image",
                                 rect: Rect::new(0, 12, 256, 225),
                                 scale: (0.6, 0.6),
-                                contents: PaneContents::image_png(include_bytes!("images/power-diff-background.png"))?,
+                                contents: PaneContents::image_png(include_bytes!(
+                                    "images/power-diff-background.png"
+                                ))?,
                                 ..Pane::EMPTY
-                            }.build(),
+                            }
+                            .build(),
                             Pane {
                                 name: "value",
                                 rect: Rect::new(0, 10, 105, 40),
@@ -117,20 +122,28 @@ pub fn power_progress_pane(
                                     text_alignment: Alignment::CENTER,
                                 },
                                 ..Pane::EMPTY
-                            }.build(),
+                            }
+                            .build(),
                         ],
                         ..Pane::EMPTY
-                    }.build(),
+                    }
+                    .build(),
                 ],
                 ..Pane::EMPTY
-            }.build(),
+            }
+            .build(),
         ],
         ..Pane::EMPTY
     }
     .build())
 }
 
-fn win_lose_pane(x: i32, y: i32, font: &Rc<FontSet<'static>>, background: &PaneContents) -> Result<BuiltPane> {
+fn win_lose_pane(
+    x: i32,
+    y: i32,
+    font: &Rc<FontSet<'static>>,
+    background: &PaneContents,
+) -> Result<BuiltPane> {
     Ok(Pane {
         name: "win_lose_pane",
         rect: Rect::new(x, y, 30, 40),
@@ -145,7 +158,8 @@ fn win_lose_pane(x: i32, y: i32, font: &Rc<FontSet<'static>>, background: &PaneC
                         scale: (0.4, 0.4),
                         contents: background.clone(),
                         ..Pane::EMPTY
-                    }.build(),
+                    }
+                    .build(),
                     Pane {
                         name: "text",
                         rect: Rect::new(0, 0, 166, 46),
@@ -157,13 +171,16 @@ fn win_lose_pane(x: i32, y: i32, font: &Rc<FontSet<'static>>, background: &PaneC
                             text_alignment: Alignment::CENTER,
                         },
                         ..Pane::EMPTY
-                    }.build(),
+                    }
+                    .build(),
                 ],
                 ..Pane::EMPTY
-            }.build(),
+            }
+            .build(),
         ],
         ..Pane::EMPTY
-    }.build())
+    }
+    .build())
 }
 
 pub const WINDOW_IN_SCALE: AnimationTrack = AnimationTrack::new(&[
@@ -173,10 +190,8 @@ pub const WINDOW_IN_SCALE: AnimationTrack = AnimationTrack::new(&[
     Keyframe::new(0.0, 14.0, 1.0),
 ]);
 
-pub const WINDOW_IN_ALPHA: AnimationTrack = AnimationTrack::new(&[
-    Keyframe::new(0.0, 0.0, 0.0),
-    Keyframe::new(0.0, 6.0, 255.0),
-]);
+pub const WINDOW_IN_ALPHA: AnimationTrack =
+    AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 0.0), Keyframe::new(0.0, 6.0, 255.0)]);
 
 pub const WIN_LOSE_IN_SCALE: AnimationTrack = AnimationTrack::new(&[
     Keyframe::new(0.175000012, 0.0, 0.5),
@@ -184,10 +199,8 @@ pub const WIN_LOSE_IN_SCALE: AnimationTrack = AnimationTrack::new(&[
     Keyframe::new(-0.100000024, 6.0, 1.0),
 ]);
 
-pub const WIN_LOSE_IN_ALPHA: AnimationTrack = AnimationTrack::new(&[
-    Keyframe::new(0.0, 0.0, 0.0),
-    Keyframe::new(0.0, 2.0, 255.0),
-]);
+pub const WIN_LOSE_IN_ALPHA: AnimationTrack =
+    AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 0.0), Keyframe::new(0.0, 2.0, 255.0)]);
 
 pub const WIN_LOSE_POSITIONS: [[(i32, i32); 5]; 4] = [
     [(-104, 147), (104, 147), (207, 147), (-207, 122), (0, 122)],
@@ -196,9 +209,8 @@ pub const WIN_LOSE_POSITIONS: [[(i32, i32); 5]; 4] = [
     [(-207, 172), (0, 172), (207, 172), (-207, 122), (0, 122)],
 ];
 
-pub const SET_SCORE_IN_SCALE_X: AnimationTrack = AnimationTrack::new(&[
-    Keyframe::new(0.0, 0.0, 1.0),
-]);
+pub const SET_SCORE_IN_SCALE_X: AnimationTrack =
+    AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 1.0)]);
 
 pub const SET_SCORE_IN_SCALE_Y: AnimationTrack = AnimationTrack::new(&[
     Keyframe::new(0.193693876, 0.0, 0.5),
@@ -207,7 +219,5 @@ pub const SET_SCORE_IN_SCALE_Y: AnimationTrack = AnimationTrack::new(&[
     Keyframe::new(0.01629752, 8.0, 1.0),
 ]);
 
-pub const SET_SCORE_IN_ALPHA: AnimationTrack = AnimationTrack::new(&[
-    Keyframe::new(0.0, 0.0, 0.0),
-    Keyframe::new(0.0, 4.0, 255.0),
-]);
+pub const SET_SCORE_IN_ALPHA: AnimationTrack =
+    AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 0.0), Keyframe::new(0.0, 4.0, 255.0)]);
