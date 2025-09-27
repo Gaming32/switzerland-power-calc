@@ -89,7 +89,7 @@ impl AnimationGenerator {
                 }
                 .into(),
                 Pane {
-                    rect: Rect::new(0, 0, 811, 10),
+                    rect: Rect::new(0, 2, 811, 10),
                     contents: PaneContents::Custom(&|canvas, rect| {
                         for i in 0..101 {
                             let x = rect.x + i * 8;
