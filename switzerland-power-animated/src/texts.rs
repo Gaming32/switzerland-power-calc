@@ -29,13 +29,13 @@ pub enum FmtKey {
     Fraction,
 }
 
-pub fn format_power(lang: &str, power: f64) -> String {
+pub fn format_power(lang: &str, key: &'static str, power: f64) -> String {
     let power = (power * 10.0) as u32;
     let integer = power / 10;
     let fraction = power % 10;
     get_text_fmt(
         lang,
-        "power_value",
+        key,
         [
             (FmtKey::Integer, &integer.to_string()),
             (FmtKey::Fraction, &fraction.to_string()),

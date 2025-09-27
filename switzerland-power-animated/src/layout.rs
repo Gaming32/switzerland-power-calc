@@ -13,26 +13,21 @@ use std::rc::Rc;
 use sdl2::image::ImageRWops;
 use sdl2::rwops::RWops;
 
+#[derive(Clone)]
 pub struct Pane {
     pub name: &'static str,
     pub rect: Rect,
-    pub scale: f64,
+    pub scale: (f64, f64),
     pub alpha: u8,
     pub anchor: Alignment,
     pub parent_anchor: Alignment,
     pub contents: PaneContents,
-    pub children: Vec<Rc<RefCell<Pane>>>,
+    pub children: Vec<BuiltPane>,
 }
 
 impl Default for Pane {
     fn default() -> Self {
         Self::EMPTY
-    }
-}
-
-impl From<Pane> for Rc<RefCell<Pane>> {
-    fn from(val: Pane) -> Self {
-        Rc::new(RefCell::new(val))
     }
 }
 
@@ -47,7 +42,7 @@ impl Pane {
                 h: 40,
             })
         },
-        scale: 1.0,
+        scale: (1.0, 1.0),
         alpha: 255,
         anchor: Alignment::CENTER,
         parent_anchor: Alignment::CENTER,
@@ -56,12 +51,23 @@ impl Pane {
     };
 
     pub fn build(self) -> BuiltPane {
-        BuiltPane(self.into())
+        BuiltPane(self.name, Rc::new(RefCell::new(self)))
+    }
+
+    pub fn set_scale(&mut self, new_scale: f64) {
+        self.scale = (new_scale, new_scale);
     }
 
     pub fn set_text(&mut self, new_text: impl Into<Cow<'static, str>>) {
-        if let PaneContents::Text { text, .. } = &mut self.contents {
+        self.set_text_and_color(new_text, None);
+    }
+
+    pub fn set_text_and_color(&mut self, new_text: impl Into<Cow<'static, str>>, new_color: impl Into<Option<Color>>) {
+        if let PaneContents::Text { text, color, .. } = &mut self.contents {
             *text = new_text.into();
+            if let Some(new_color) = new_color.into() {
+                *color = new_color;
+            }
         } else {
             panic!("PaneContents::set_text called on a non-Text Pane!");
         }
@@ -71,7 +77,8 @@ impl Pane {
         &self,
         canvas: &mut SurfaceCanvas,
         parent_rect: Rect,
-        parent_scale: f64,
+        parent_x_scale: f64,
+        parent_y_scale: f64,
     ) -> Result<()> {
         let origin_x = parent_rect.x()
             + self
@@ -84,14 +91,15 @@ impl Pane {
                 .vertical
                 .align(parent_rect.height() as i32);
 
-        let accumulated_scale = parent_scale * self.scale;
-        let width = (self.rect.width() as f64 * accumulated_scale) as u32;
-        let height = (self.rect.height() as f64 * accumulated_scale) as u32;
+        let accumulated_x_scale = parent_x_scale * self.scale.0;
+        let accumulated_y_scale = parent_y_scale * self.scale.1;
+        let width = (self.rect.width() as f64 * accumulated_x_scale) as u32;
+        let height = (self.rect.height() as f64 * accumulated_y_scale) as u32;
         let draw_rect = Rect::new(
-            origin_x + (self.rect.x as f64 * parent_scale) as i32
+            origin_x + (self.rect.x as f64 * parent_x_scale) as i32
                 - self.anchor.horizontal.align(width as i32),
             origin_y
-                - (self.rect.y as f64 * parent_scale) as i32
+                - (self.rect.y as f64 * parent_y_scale) as i32
                 - self.anchor.vertical.align(height as i32),
             width,
             height,
@@ -99,7 +107,7 @@ impl Pane {
 
         match self.alpha {
             0 => {}
-            255 => self.render_internal(canvas, draw_rect, accumulated_scale)?,
+            255 => self.render_internal(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?,
             alpha => {
                 let mut sub_canvas = Surface::new(
                     canvas.surface().width(),
@@ -107,7 +115,7 @@ impl Pane {
                     PIXEL_FORMAT,
                 )?
                 .into_canvas()?;
-                self.render_internal(&mut sub_canvas, draw_rect, accumulated_scale)?;
+                self.render_internal(&mut sub_canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?;
                 sub_canvas.surface_mut().set_alpha_mod(alpha);
                 sub_canvas
                     .surface()
@@ -121,16 +129,16 @@ impl Pane {
         &self,
         canvas: &mut SurfaceCanvas,
         draw_rect: Rect,
-        accumulated_scale: f64,
+        accumulated_x_scale: f64,
+        accumulated_y_scale: f64,
     ) -> Result<()> {
         let old_scale = canvas.scale();
-        canvas.set_scale(accumulated_scale as f32, accumulated_scale as f32)?;
+        canvas.set_scale(accumulated_x_scale as f32, accumulated_y_scale as f32)?;
 
-        self.contents.render(canvas, draw_rect, accumulated_scale)?;
+        self.contents.render(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?;
 
         for child in &self.children {
-            let child = child.borrow();
-            child.render(canvas, draw_rect, accumulated_scale)?;
+            child.pane().render(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?;
         }
 
         canvas.set_scale(old_scale.0, old_scale.1)?;
@@ -138,11 +146,11 @@ impl Pane {
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub enum PaneContents {
     #[default]
     Null,
-    Image(Surface<'static>),
+    Image(Rc<Surface<'static>>),
     Text {
         text: Cow<'static, str>,
         font: Rc<FontSet<'static>>,
@@ -155,17 +163,17 @@ pub enum PaneContents {
 
 impl PaneContents {
     pub fn image_png(bytes: &[u8]) -> Result<Self> {
-        Ok(Self::Image(RWops::from_bytes(bytes)?.load_png()?))
+        Ok(Self::Image(Rc::new(RWops::from_bytes(bytes)?.load_png()?)))
     }
 
-    fn render(&self, canvas: &mut SurfaceCanvas, viewport: Rect, scale: f64) -> Result<()> {
+    fn render(&self, canvas: &mut SurfaceCanvas, viewport: Rect, x_scale: f64, y_scale: f64) -> Result<()> {
         match self {
             PaneContents::Null => {}
             PaneContents::Image(image) => {
                 image.blit_scaled(None, canvas.surface_mut(), viewport)?;
             }
             PaneContents::Text {
-                scale: (x_scale, y_scale),
+                scale: (text_x_scale, text_y_scale),
                 text_alignment,
                 font,
                 color,
@@ -173,8 +181,8 @@ impl PaneContents {
             } => {
                 let text_surface = font.render(*color, text)?;
 
-                let x_scale = x_scale * scale;
-                let y_scale = y_scale * scale;
+                let x_scale = text_x_scale * x_scale;
+                let y_scale = text_y_scale * y_scale;
 
                 let text_rel_x = text_alignment.horizontal.align(viewport.width() as i32)
                     - text_alignment
@@ -197,10 +205,10 @@ impl PaneContents {
                 renderer(
                     canvas,
                     Rect::new(
-                        (viewport.x() as f64 / scale) as i32,
-                        (viewport.y() as f64 / scale) as i32,
-                        (viewport.width() as f64 / scale) as u32,
-                        (viewport.height() as f64 / scale) as u32,
+                        (viewport.x() as f64 / x_scale) as i32,
+                        (viewport.y() as f64 / y_scale) as i32,
+                        (viewport.width() as f64 / x_scale) as u32,
+                        (viewport.height() as f64 / y_scale) as u32,
                     ),
                 )?;
             }
@@ -210,25 +218,33 @@ impl PaneContents {
 }
 
 #[derive(Clone)]
-pub struct BuiltPane(Rc<RefCell<Pane>>);
+pub struct BuiltPane(&'static str, Rc<RefCell<Pane>>);
 
 impl BuiltPane {
+    pub fn name(&self) -> &'static str {
+        self.0
+    }
+
     pub fn pane(&self) -> Ref<'_, Pane> {
-        self.0.borrow()
+        self.1.borrow()
     }
 
     pub fn edit<R>(&self, editor: impl FnOnce(&mut Pane) -> R) -> R {
-        editor(&mut self.0.borrow_mut())
+        editor(&mut self.1.borrow_mut())
     }
 
     pub fn set_text(&self, new_text: impl Into<Cow<'static, str>>) {
         self.edit(|x| x.set_text(new_text))
     }
 
+    pub fn set_text_and_color(&self, new_text: impl Into<Cow<'static, str>>, new_color: impl Into<Option<Color>>) {
+        self.edit(|x| x.set_text_and_color(new_text, new_color))
+    }
+
     pub fn render(&self, canvas: &mut SurfaceCanvas) -> Result<()> {
         let rect = canvas.surface().rect();
         let pane = self.pane();
-        pane.render(canvas, rect, pane.scale)
+        pane.render(canvas, rect, pane.scale.0, pane.scale.1)
     }
 
     pub fn child(&self, path: &[&str]) -> Option<BuiltPane> {
@@ -238,13 +254,13 @@ impl BuiltPane {
                 .pane()
                 .children
                 .iter()
-                .find(|x| x.borrow().name == name)
-                .map(|x| BuiltPane(x.clone())),
+                .find(|x| x.name() == name)
+                .cloned(),
             [name, ..] => self.pane()
                 .children
                 .iter()
-                .filter(|x| x.borrow().name == name)
-                .filter_map(|x| BuiltPane(x.clone()).child(&path[1..]))
+                .filter(|x| x.name() == name)
+                .filter_map(|x| x.child(&path[1..]))
                 .next()
         }
     }
@@ -256,14 +272,14 @@ impl BuiltPane {
                 .pane()
                 .children
                 .iter()
-                .filter(|x| x.borrow().name == name)
-                .map(|x| BuiltPane(x.clone()))
+                .filter(|x| x.name() == name)
+                .cloned()
                 .collect(),
             [name, ..] => self.pane()
                 .children
                 .iter()
-                .filter(|x| x.borrow().name == name)
-                .flat_map(|x| BuiltPane(x.clone()).children(&path[1..]))
+                .filter(|x| x.name() == name)
+                .flat_map(|x| x.children(&path[1..]))
                 .collect()
         }
     }

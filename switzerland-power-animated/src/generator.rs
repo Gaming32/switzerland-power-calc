@@ -1,10 +1,11 @@
-use crate::{MatchOutcome, PowerStatus};
 use crate::Result;
 use crate::animation::AnimationTrack;
 use crate::font::FontSet;
-use crate::layout::BuiltPane;
+use crate::layout::{BuiltPane, PaneContents};
 use crate::panes::{calc_rank_pane, power_progress_pane};
-use crate::texts::{FmtKey, get_text, get_text_fmt, format_power};
+use crate::texts::{FmtKey, format_power, get_text, get_text_fmt};
+use crate::{MatchOutcome, PowerStatus};
+use itertools::{izip, Itertools};
 use sdl2::Sdl;
 use sdl2::image::{InitFlag, Sdl2ImageContext};
 use sdl2::pixels::{Color, PixelFormatEnum};
@@ -15,6 +16,7 @@ use std::cell::RefCell;
 use std::mem;
 use std::rc::Rc;
 use webp::{AnimEncoder, AnimFrame, WebPConfig, WebPMemory};
+use crate::status::SetScore;
 
 pub const WIDTH: u32 = 1250;
 pub const HEIGHT: u32 = 776;
@@ -29,7 +31,7 @@ pub struct AnimationGenerator {
     state: RefCell<GeneratorState>,
 
     calc_rank_pane: BuiltPane,
-    change_power_pane: BuiltPane,
+    power_progress_pane: BuiltPane,
 
     _sdl_ttf: Sdl2TtfContext,
     _sdl_image: Sdl2ImageContext,
@@ -55,6 +57,9 @@ impl AnimationGenerator {
         }
 
         let bold_font = Rc::new(load_font!(80, "BlitzBold.otf", "FOT-RowdyStd-EB.otf"));
+        let bold_font_small = Rc::new(load_font!(36, "BlitzBold.otf", "FOT-RowdyStd-EB.otf"));
+
+        let swiss_flag = PaneContents::image_png(include_bytes!("panes/images/swiss-flag.png"))?;
 
         Ok(Self {
             state: RefCell::new(GeneratorState {
@@ -62,8 +67,12 @@ impl AnimationGenerator {
                 frames: vec![],
             }),
 
-            calc_rank_pane: calc_rank_pane::calc_rank_pane(bold_font.clone())?,
-            change_power_pane: power_progress_pane::power_progress_pane(bold_font.clone())?,
+            calc_rank_pane: calc_rank_pane::calc_rank_pane(bold_font.clone(), swiss_flag.clone())?,
+            power_progress_pane: power_progress_pane::power_progress_pane(
+                bold_font.clone(),
+                bold_font_small.clone(),
+                swiss_flag.clone(),
+            )?,
 
             _sdl: sdl,
             _sdl_image: sdl_image,
@@ -97,9 +106,15 @@ impl AnimationGenerator {
                 Some(power),
                 Some(rank),
             )?,
-            PowerStatus::SetPlayed { matches, old_power, new_power, old_rank, new_rank } => {
+            PowerStatus::SetPlayed {
+                matches,
+                old_power,
+                new_power,
+                old_rank,
+                new_rank,
+            } => {
                 self.generate_set_played(matches, old_power, new_power, old_rank, new_rank)?;
-            },
+            }
         }
 
         Ok(mem::take(&mut self.state.borrow_mut().frames))
@@ -123,26 +138,26 @@ impl AnimationGenerator {
 
         let result_pane = self.calc_rank_pane.child(&["result_pane"]).unwrap();
         let calculated_text = result_pane.child(&["calculated_text"]).unwrap();
-        let power_text = result_pane.child(&["power_text"]).unwrap();
+        let power_value_text = result_pane.child(&["power_value_text"]).unwrap();
 
         let rank_pane = self.calc_rank_pane.child(&["rank_pane"]).unwrap();
         let position_text = rank_pane.child(&["position_text"]).unwrap();
         let estimate_text = rank_pane.child(&["estimate_text"]).unwrap();
         let inner_rank_pane = rank_pane.child(&["inner_rank_pane"]).unwrap();
-        let rank_text = inner_rank_pane.child(&["rank_text"]).unwrap();
+        let rank_value_text = inner_rank_pane.child(&["rank_value_text"]).unwrap();
 
         self.calc_rank_pane.edit(|x| {
-            x.scale = 1.0;
+            x.set_scale(1.0);
             x.alpha = 255;
         });
 
         calculating_text.set_text(get_text(LANG, "calculating"));
         progress_pane.edit(|x| {
-            x.scale = 1.0;
+            x.set_scale(1.0);
             x.alpha = 255;
         });
         progress_text.edit(|x| {
-            x.scale = 1.0;
+            x.set_scale(1.0);
             x.alpha = 255;
             x.set_text((progress - 1).to_string());
         });
@@ -151,21 +166,22 @@ impl AnimationGenerator {
         result_pane.edit(|x| {
             x.alpha = 0;
         });
-        power_text.edit(|x| {
-            x.scale = 1.0;
+        power_value_text.edit(|x| {
+            x.set_scale(1.0);
         });
 
         rank_pane.edit(|x| {
             x.alpha = 0;
         });
         inner_rank_pane.edit(|x| {
-            x.scale = 1.0;
+            x.set_scale(1.0);
             x.alpha = 0;
         });
 
         state.animate_transition(
             &self.calc_rank_pane,
             &self.calc_rank_pane,
+            WINDOW_IN_SCALE,
             WINDOW_IN_SCALE,
             WINDOW_IN_ALPHA,
             60,
@@ -179,37 +195,38 @@ impl AnimationGenerator {
             &self.calc_rank_pane,
             &progress_text,
             PROGRESS_IN_SCALE,
+            PROGRESS_IN_SCALE,
             PROGRESS_IN_ALPHA,
             120,
         )?;
 
         if let Some(calculated_power) = calculated_power {
             calculated_text.set_text(get_text(LANG, "calculated"));
-            power_text.set_text(format_power(LANG, calculated_power));
+            power_value_text.set_text(format_power(LANG, "power_value", calculated_power));
 
             for frame in 0..=RESULT_POWER_SCALE.duration() as u32 {
                 progress_pane.edit(|x| {
-                    x.scale = RESULT_PROGRESS_SCALE.value_at(frame as f64);
+                    x.set_scale(RESULT_PROGRESS_SCALE.value_at(frame as f64));
                     x.alpha = RESULT_PROGRESS_ALPHA.value_at(frame as f64) as u8;
                 });
                 result_pane.edit(|x| {
                     x.alpha = RESULT_PANE_ALPHA.value_at(frame as f64) as u8;
                 });
-                power_text.edit(|x| {
-                    x.scale = RESULT_POWER_SCALE.value_at(frame as f64);
+                power_value_text.edit(|x| {
+                    x.set_scale(RESULT_POWER_SCALE.value_at(frame as f64));
                 });
                 state.render_frame(&self.calc_rank_pane, 1)?;
             }
 
             progress_pane.edit(|x| {
-                x.scale = 1.0;
+                x.set_scale(1.0);
                 x.alpha = 0;
             });
             result_pane.edit(|x| {
                 x.alpha = 255;
             });
-            power_text.edit(|x| {
-                x.scale = 1.0;
+            power_value_text.edit(|x| {
+                x.set_scale(1.0);
             });
             state.render_frame(&self.calc_rank_pane, 180)?;
         }
@@ -218,6 +235,7 @@ impl AnimationGenerator {
             state.animate_transition(
                 &self.calc_rank_pane,
                 &self.calc_rank_pane,
+                WINDOW_OUT_SCALE,
                 WINDOW_OUT_SCALE,
                 WINDOW_OUT_ALPHA,
                 6,
@@ -228,7 +246,7 @@ impl AnimationGenerator {
 
             position_text.set_text(get_text(LANG, "position"));
             estimate_text.set_text(get_text(LANG, "estimate"));
-            rank_text.set_text(get_text_fmt(
+            rank_value_text.set_text(get_text_fmt(
                 LANG,
                 "rank_value",
                 [(FmtKey::Rank, &estimated_rank.to_string())],
@@ -238,6 +256,7 @@ impl AnimationGenerator {
                 &self.calc_rank_pane,
                 &self.calc_rank_pane,
                 WINDOW_IN_SCALE,
+                WINDOW_IN_SCALE,
                 WINDOW_IN_ALPHA,
                 6,
             )?;
@@ -245,6 +264,7 @@ impl AnimationGenerator {
             state.animate_transition(
                 &self.calc_rank_pane,
                 &inner_rank_pane,
+                RESULT_RANK_SCALE,
                 RESULT_RANK_SCALE,
                 RESULT_RANK_ALPHA,
                 120,
@@ -254,6 +274,7 @@ impl AnimationGenerator {
         state.animate_transition(
             &self.calc_rank_pane,
             &self.calc_rank_pane,
+            WINDOW_OUT_SCALE,
             WINDOW_OUT_SCALE,
             WINDOW_OUT_ALPHA,
             90,
@@ -273,8 +294,73 @@ impl AnimationGenerator {
     ) -> Result<()> {
         use power_progress_pane::*;
 
+        let (wins, losses) = matches.set_score();
+
         let mut state = self.state.borrow_mut();
-        state.render_frame(&self.change_power_pane, 1)?;
+
+        let set_outcome_pane = self
+            .power_progress_pane
+            .child(&["set_outcome_pane"])
+            .unwrap();
+        let set_score_text = set_outcome_pane.child(&["set_score_text"]).unwrap();
+        let win_lose_panes = set_outcome_pane.children(&["win_lose_pane"]);
+        let win_lose_animation_panes = set_outcome_pane.children(&["win_lose_pane", "animation_pane"]);
+        let win_lose_texts = set_outcome_pane.children(&["win_lose_pane", "animation_pane", "text"]);
+
+        let power_pane = self.power_progress_pane.child(&["power_pane"]).unwrap();
+        let power_text = power_pane.child(&["power_text"]).unwrap();
+        let power_value_text = power_pane.child(&["power_value_text"]).unwrap();
+
+        power_text.set_text(get_text(LANG, "power"));
+        power_value_text.set_text(format_power(LANG, "power_value", old_power));
+
+        state.animate_transition(
+            &self.power_progress_pane,
+            &self.power_progress_pane,
+            WINDOW_IN_SCALE,
+            WINDOW_IN_SCALE,
+            WINDOW_IN_ALPHA,
+            1,
+        )?;
+
+        let win_text = get_text(LANG, "win");
+        let lose_text = get_text(LANG, "lose");
+        for (outcome, base_pane, animation_pane, text_pane, pos) in izip!(
+            matches.into_iter().filter(|x| *x != MatchOutcome::Unplayed),
+            win_lose_panes.iter(),
+            win_lose_animation_panes.iter(),
+            win_lose_texts.iter(),
+            WIN_LOSE_POSITIONS[wins + losses - 2]
+        ) {
+            let (color, text) = match outcome {
+                MatchOutcome::Win => (WIN_COLOR, win_text),
+                MatchOutcome::Lose => (LOSE_COLOR, lose_text),
+                MatchOutcome::Unplayed => unreachable!(),
+            };
+
+            base_pane.edit(|x| x.rect.reposition(pos));
+            text_pane.set_text_and_color(text, color);
+
+            state.animate_transition(
+                &self.power_progress_pane,
+                animation_pane,
+                WIN_LOSE_IN_SCALE,
+                WIN_LOSE_IN_SCALE,
+                WIN_LOSE_IN_ALPHA,
+                0,
+            )?;
+        }
+        state.push_frame(60);
+
+        set_score_text.set_text(format!("{wins} - {losses}"));
+        state.animate_transition(
+            &self.power_progress_pane,
+            &set_score_text,
+            SET_SCORE_IN_SCALE_X,
+            SET_SCORE_IN_SCALE_Y,
+            SET_SCORE_IN_ALPHA,
+            60,
+        )?;
 
         Ok(())
     }
@@ -292,20 +378,28 @@ impl GeneratorState {
         &mut self,
         root_pane: &BuiltPane,
         pane: &BuiltPane,
-        scale_anim: AnimationTrack,
+        x_scale_anim: AnimationTrack,
+        y_scale_anim: AnimationTrack,
         alpha_anim: AnimationTrack,
         end_delay: u32,
     ) -> Result<()> {
-        for frame in 0..=scale_anim.duration() as u32 {
+        let duration = x_scale_anim
+            .duration()
+            .max(y_scale_anim.duration())
+            .max(alpha_anim.duration());
+        for frame in 0..=duration as u32 {
             pane.edit(|x| {
-                x.scale = scale_anim.value_at(frame as f64);
+                x.scale = (
+                    x_scale_anim.value_at(frame as f64),
+                    y_scale_anim.value_at(frame as f64),
+                );
                 x.alpha = alpha_anim.value_at(frame as f64) as u8;
             });
             self.render_frame(root_pane, 1)?;
         }
 
         pane.edit(|x| {
-            x.scale = scale_anim.ending_value();
+            x.scale = (x_scale_anim.ending_value(), y_scale_anim.ending_value());
             x.alpha = alpha_anim.ending_value() as u8;
         });
         self.render_frame(root_pane, end_delay)?;

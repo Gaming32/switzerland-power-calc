@@ -24,3 +24,22 @@ pub enum MatchOutcome {
     Win,
     Lose,
 }
+
+pub trait SetScore {
+    fn set_score(&self) -> (usize, usize);
+}
+
+impl<const N: usize> SetScore for [MatchOutcome; N] {
+    fn set_score(&self) -> (usize, usize) {
+        let mut wins = 0;
+        let mut losses = 0;
+        for x in self {
+            match x {
+                MatchOutcome::Win => wins += 1,
+                MatchOutcome::Lose => losses += 1,
+                MatchOutcome::Unplayed => {}
+            }
+        }
+        (wins, losses)
+    }
+}

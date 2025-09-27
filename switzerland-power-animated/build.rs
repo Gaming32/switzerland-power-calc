@@ -75,6 +75,27 @@ fn main() {
                     lit(&get_translation("LayoutMsg/Lobby_ResultDialogue_00", "200")
                         .replace("[group=0002 type=0000 params=00 04 00 00]", "{rank}")),
                 )
+                .entry("power", lit(match lang_name.as_str() {
+                    "USen" | "EUen" => "Switzerland Power",
+                    "JPja" => "Switzerland パワー",
+                    _ => "Switzerland Power",
+                }))
+                .entry("win", lit(get_translation("LayoutMsg/Lobby_ResultClearance_00", "020")))
+                .entry("lose", lit(get_translation("LayoutMsg/Lobby_ResultClearance_00", "021")))
+                .entry(
+                    "power_up",
+                    lit(&get_translation("LayoutMsg/Lobby_ResultClearance_00", "210")
+                        .replace("[group=0002 type=0000 params=00 02 00 00]", "{integer}")
+                        .replace("[group=0002 type=0000 params=01 01 00 00]", "{fraction}")
+                    ),
+                )
+                .entry(
+                    "power_down",
+                    lit(&get_translation("LayoutMsg/Lobby_ResultClearance_00", "211")
+                        .replace("[group=0002 type=0000 params=00 02 00 00]", "{integer}")
+                        .replace("[group=0002 type=0000 params=01 01 00 00]", "{fraction}")
+                    ),
+                )
                 .build()
                 .to_string(),
         );

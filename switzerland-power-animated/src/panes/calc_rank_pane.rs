@@ -1,17 +1,15 @@
-use crate::Result;
 use crate::alignment::Alignment;
 use crate::animation::{AnimationTrack, Keyframe};
 use crate::font::FontSet;
+use crate::generator::{HEIGHT, WIDTH};
 use crate::layout::{BuiltPane, Pane, PaneContents};
+use crate::Result;
 use sdl2::gfx::primitives::DrawRenderer;
-use sdl2::image::ImageRWops;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
-use sdl2::rwops::RWops;
 use std::rc::Rc;
-use crate::generator::{HEIGHT, WIDTH};
 
-pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
+pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>, swiss_flag: PaneContents) -> Result<BuiltPane> {
     Ok(Pane {
         rect: Rect::new(0, 0, WIDTH, HEIGHT),
         children: vec![
@@ -20,13 +18,13 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                 contents: PaneContents::image_png(include_bytes!("images/calc-rank-background.png"))?,
                 ..Pane::EMPTY
             }
-            .into(),
+            .build(),
             Pane {
                 rect: Rect::new(0, 190, 68, 68),
-                contents: PaneContents::image_png(include_bytes!("images/swiss-flag.png"))?,
+                contents: swiss_flag,
                 ..Pane::EMPTY
             }
-            .into(),
+            .build(),
             Pane {
                 rect: Rect::new(0, 2, 811, 10),
                 contents: PaneContents::Custom(&|canvas, rect| {
@@ -44,7 +42,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                 }),
                 ..Pane::EMPTY
             }
-            .into(),
+            .build(),
             Pane {
                 name: "progress_pane",
                 children: vec![
@@ -60,7 +58,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         },
                         ..Pane::EMPTY
                     }
-                    .into(),
+                    .build(),
                     Pane {
                         name: "progress_text",
                         rect: Rect::new(-54, -108, 200, 206),
@@ -73,7 +71,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         },
                         ..Pane::EMPTY
                     }
-                    .into(),
+                    .build(),
                     Pane {
                         name: "total_text",
                         rect: Rect::new(2, -126, 200, 150),
@@ -87,11 +85,11 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         },
                         ..Pane::EMPTY
                     }
-                    .into(),
+                    .build(),
                 ],
                 ..Pane::EMPTY
             }
-            .into(),
+            .build(),
             Pane {
                 name: "result_pane",
                 alpha: 0,
@@ -108,9 +106,9 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         },
                         ..Pane::EMPTY
                     }
-                    .into(),
+                    .build(),
                     Pane {
-                        name: "power_text",
+                        name: "power_value_text",
                         rect: Rect::new(5, -106, 800, 294),
                         contents: PaneContents::Text {
                             text: "1500.0".into(),
@@ -121,11 +119,11 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         },
                         ..Pane::EMPTY
                     }
-                    .into(),
+                    .build(),
                 ],
                 ..Pane::EMPTY
             }
-            .into(),
+            .build(),
             Pane {
                 name: "rank_pane",
                 rect: Rect::new(-12, -93, 45, 60),
@@ -143,7 +141,7 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         },
                         ..Pane::EMPTY
                     }
-                    .into(),
+                    .build(),
                     Pane {
                         name: "estimate_text",
                         rect: Rect::new(-170, 47, 300, 93),
@@ -157,14 +155,14 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                         },
                         ..Pane::EMPTY
                     }
-                    .into(),
+                    .build(),
                     Pane {
                         name: "inner_rank_pane",
                         rect: Rect::new(7, -52, 45, 60),
                         alpha: 0,
                         children: vec![
                             Pane {
-                                name: "rank_text",
+                                name: "rank_value_text",
                                 rect: Rect::new(0, 8, 680, 180),
                                 parent_anchor: Alignment::LEFT,
                                 contents: PaneContents::Text {
@@ -176,15 +174,15 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                                 },
                                 ..Pane::EMPTY
                             }
-                            .into(),
+                            .build(),
                         ],
                         ..Pane::EMPTY
                     }
-                    .into(),
+                    .build(),
                 ],
                 ..Pane::EMPTY
             }
-            .into(),
+            .build(),
         ],
         ..Pane::EMPTY
     }
