@@ -1,3 +1,5 @@
+use sdl2::rect::Point;
+
 #[derive(Debug, Copy, Clone)]
 #[allow(dead_code)]
 pub enum HorizontalAlignment {
@@ -35,6 +37,8 @@ pub struct Alignment {
 impl Alignment {
     pub const CENTER: Alignment =
         Alignment::new(HorizontalAlignment::Center, VerticalAlignment::Middle);
+    pub const LEFT: Alignment =
+        Alignment::new(HorizontalAlignment::Left, VerticalAlignment::Middle);
 
     pub const fn new(horizontal: HorizontalAlignment, vertical: VerticalAlignment) -> Self {
         Self {

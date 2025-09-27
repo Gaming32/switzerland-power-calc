@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use crate::PowerStatus;
 use crate::Result;
 use crate::alignment::Alignment;
@@ -8,6 +9,7 @@ use crate::animations::{
     WINDOW_OUT_SCALE,
 };
 use crate::font::FontSet;
+use crate::layout::{Pane, PaneContents, BuiltPane};
 use crate::texts::get_text;
 use sdl2::Sdl;
 use sdl2::gfx::primitives::DrawRenderer;
@@ -26,41 +28,12 @@ const HEIGHT: u32 = 776;
 const HALF_WIDTH: i32 = WIDTH as i32 / 2;
 const HALF_HEIGHT: i32 = HEIGHT as i32 / 2;
 const FPS: u32 = 60;
+const LANG: &str = "en"; // TODO: Make configurable
 
 pub(crate) const PIXEL_FORMAT: PixelFormatEnum = PixelFormatEnum::ABGR8888;
 
 pub struct AnimationGenerator {
-    generator: RefCell<FrameGenerator>,
-}
-
-impl AnimationGenerator {
-    pub fn new() -> Result<Self> {
-        Ok(Self {
-            generator: RefCell::new(FrameGenerator::new()?),
-        })
-    }
-
-    pub fn generate(&self, status: PowerStatus) -> Result<WebPMemory> {
-        encode_frames(self.generate_frames(status)?)
-    }
-
-    pub async fn generate_async(&self, status: PowerStatus) -> Result<Vec<u8>> {
-        let frames = self.generate_frames(status)?;
-        tokio::task::spawn_blocking(move || encode_frames(frames).map(|x| x.to_vec()))
-            .await
-            .unwrap()
-    }
-
-    fn generate_frames(&self, status: PowerStatus) -> Result<FramesVec> {
-        self.generator.borrow_mut().generate_frames(status)
-    }
-}
-
-type FramesVec = Vec<(Vec<u8>, u32)>;
-
-struct FrameGenerator {
-    canvas: SurfaceCanvas<'static>,
-    frames: FramesVec,
+    state: RefCell<GeneratorState>,
 
     background: Surface<'static>,
     swiss_flag: Surface<'static>,
@@ -71,13 +44,11 @@ struct FrameGenerator {
     _sdl: Sdl,
 }
 
-impl FrameGenerator {
-    fn new() -> Result<Self> {
+impl AnimationGenerator {
+    pub fn new() -> Result<Self> {
         let sdl = sdl2::init()?;
         let sdl_image = sdl2::image::init(InitFlag::PNG)?;
         let sdl_ttf = sdl2::ttf::init()?;
-
-        let canvas = Surface::new(WIDTH, HEIGHT, PIXEL_FORMAT)?.into_canvas()?;
 
         macro_rules! load_font {
             ($point_size:literal, $($font:literal),+ $(,)?) => {
@@ -96,8 +67,10 @@ impl FrameGenerator {
         background.set_blend_mode(BlendMode::None)?;
 
         Ok(Self {
-            canvas,
-            frames: vec![],
+            state: RefCell::new(GeneratorState {
+                canvas: Surface::new(WIDTH, HEIGHT, PIXEL_FORMAT)?.into_canvas()?,
+                frames: vec![],
+            }),
 
             background,
             swiss_flag: RWops::from_bytes(include_bytes!("assets/swiss-flag.png"))?.load_png()?,
@@ -109,223 +82,204 @@ impl FrameGenerator {
         })
     }
 
-    fn generate_frames(&mut self, status: PowerStatus) -> Result<FramesVec> {
+    pub fn generate(&self, status: PowerStatus) -> Result<WebPMemory> {
+        encode_frames(self.generate_frames(status)?)
+    }
+
+    pub async fn generate_async(&self, status: PowerStatus) -> Result<Vec<u8>> {
+        let frames = self.generate_frames(status)?;
+        tokio::task::spawn_blocking(move || encode_frames(frames).map(|x| x.to_vec()))
+            .await
+            .unwrap()
+    }
+}
+
+impl AnimationGenerator {
+    fn generate_frames(&self, status: PowerStatus) -> Result<FramesVec> {
         match status {
             PowerStatus::Calculating { progress, total } => {
-                self.generate_calculating(progress, total)?
+                self.generate_calculating(progress, total, None)?
             }
+            PowerStatus::Calculated {
+                calculation_rounds,
+                power,
+                rank: _,
+            } => self.generate_calculating(calculation_rounds, calculation_rounds, Some(power))?,
             _ => todo!("Implement other statuses"),
         }
 
-        Ok(std::mem::take(&mut self.frames))
+        Ok(std::mem::take(&mut self.state.borrow_mut().frames))
     }
 
-    fn generate_calculating(&mut self, progress: u32, total: u32) -> Result<()> {
-        let mut base_window = Surface::new(WIDTH, HEIGHT, PIXEL_FORMAT)?.into_canvas()?;
-        base_window.surface_mut().set_blend_mode(BlendMode::None)?;
-
-        self.background.blit_scaled(
-            None,
-            base_window.surface_mut(),
-            Rect::new(0, 0, 1015, 630).centered_on((HALF_WIDTH, HALF_HEIGHT)),
-        )?;
-
-        self.swiss_flag.blit(
-            None,
-            base_window.surface_mut(),
-            Rect::new(HALF_WIDTH - 34, HALF_HEIGHT - 190 - 34, 68, 68),
-        )?;
-
-        for i in 0..101 {
-            let x = HALF_WIDTH - 405 + i * 8;
-            const Y: i32 = HALF_HEIGHT - 5;
-            // WARNING: filled_circle takes in ABGR instead of RGBA
-            base_window.filled_circle(x as i16 + 4, Y as i16 + 4, 2, (64, 255, 255, 255))?;
-        }
-
-        self.print_text(
-            &mut base_window,
-            (0, 90, 850, 147),
-            Alignment::CENTER,
-            Alignment::CENTER,
-            (0.6, 0.59),
-            get_text("en", "calculating"),
-        )?;
-
-        self.print_text(
-            &mut base_window,
-            (2, -126, 200, 150),
-            (Left, Middle),
-            (Left, Middle),
-            (0.8, 0.8),
-            &format!("/{total}"),
-        )?;
-
-        {
-            let mut base_window_with_progress =
-                Surface::new(WIDTH, HEIGHT, PIXEL_FORMAT)?.into_canvas()?;
-            base_window_with_progress.set_blend_mode(BlendMode::Mul);
-            base_window
-                .surface()
-                .blit(None, base_window_with_progress.surface_mut(), None)?;
-            self.print_text(
-                &mut base_window_with_progress,
-                (-54, -108, 200, 206),
-                Alignment::CENTER,
-                Alignment::CENTER,
-                (1.2, 1.2),
-                &(progress - 1).to_string(),
-            )?;
-
-            self.canvas.set_draw_color((0, 0, 0, 0));
-            for frame in 0..=WINDOW_IN_SCALE.duration() as u32 {
-                let scale = WINDOW_IN_SCALE.value_at(frame as f64);
-                let alpha = WINDOW_IN_ALPHA.value_at(frame as f64);
-                self.canvas.fill_rect(None)?;
-                base_window_with_progress
-                    .surface_mut()
-                    .set_alpha_mod(alpha as u8);
-                base_window_with_progress.surface().blit_scaled(
-                    None,
-                    self.canvas.surface_mut(),
-                    Rect::new(
-                        HALF_WIDTH - (HALF_WIDTH as f64 * scale) as i32,
-                        HALF_HEIGHT - (HALF_HEIGHT as f64 * scale) as i32,
-                        (WIDTH as f64 * scale) as u32,
-                        (HEIGHT as f64 * scale) as u32,
-                    ),
-                )?;
-                self.push_frame(1);
-            }
-
-            base_window_with_progress.surface_mut().set_alpha_mod(255);
-            base_window_with_progress
-                .surface()
-                .blit(None, self.canvas.surface_mut(), None)?;
-            self.push_frame(60);
-        }
-
-        base_window
-            .surface()
-            .blit(None, self.canvas.surface_mut(), None)?;
-        self.push_frame(1);
-
-        {
-            let mut progress_text = self.bold_font.render(Color::WHITE, &progress.to_string())?;
-            fn layout_progress_text(
-                text: &Surface,
-                canvas: &mut SurfaceCanvas,
-                scale: f64,
-            ) -> Result<()> {
-                FrameGenerator::layout_surface(
-                    canvas,
-                    (-54, -108, 200, 206),
-                    Alignment::CENTER,
-                    Alignment::CENTER,
-                    (1.2 * scale, 1.2 * scale),
-                    text,
-                )
-            }
-
-            for frame in 0..=PROGRESS_IN_SCALE.duration() as u32 {
-                let scale = PROGRESS_IN_SCALE.value_at(frame as f64);
-                let alpha = PROGRESS_IN_ALPHA.value_at(frame as f64);
-                base_window
-                    .surface()
-                    .blit(None, self.canvas.surface_mut(), None)?;
-                progress_text.set_alpha_mod(alpha as u8);
-                layout_progress_text(&progress_text, &mut self.canvas, scale)?;
-                self.push_frame(1);
-            }
-
-            layout_progress_text(&progress_text, &mut base_window, 1.0)?;
-        }
-
-        base_window
-            .surface()
-            .blit(None, self.canvas.surface_mut(), None)?;
-        self.push_frame(60);
-
-        {
-            self.canvas.set_draw_color((0, 0, 0, 0));
-            for frame in 0..=WINDOW_OUT_SCALE.duration() as u32 {
-                let scale = WINDOW_OUT_SCALE.value_at(frame as f64);
-                let alpha = WINDOW_OUT_ALPHA.value_at(frame as f64);
-                self.canvas.fill_rect(None)?;
-                base_window.surface_mut().set_alpha_mod(alpha as u8);
-                base_window.surface().blit_scaled(
-                    None,
-                    self.canvas.surface_mut(),
-                    Rect::new(
-                        HALF_WIDTH - (HALF_WIDTH as f64 * scale) as i32,
-                        HALF_HEIGHT - (HALF_HEIGHT as f64 * scale) as i32,
-                        (WIDTH as f64 * scale) as u32,
-                        (HEIGHT as f64 * scale) as u32,
-                    ),
-                )?;
-                self.push_frame(1);
-            }
-
-            self.canvas.fill_rect(None)?;
-            self.push_frame(60);
-            self.push_frame(0);
-        }
-
-        Ok(())
-    }
-
-    fn print_text(
+    fn generate_calculating(
         &self,
-        canvas: &mut SurfaceCanvas,
-        container: impl Into<Rect>,
-        anchor: impl Into<Alignment>,
-        text_alignment: impl Into<Alignment>,
-        (x_scale, y_scale): (f64, f64),
-        text: &str,
+        progress: u32,
+        total: u32,
+        _calculated_power: Option<f64>,
     ) -> Result<()> {
-        Self::layout_surface(
-            canvas,
-            container,
-            anchor,
-            text_alignment,
-            (x_scale, y_scale),
-            &self.bold_font.render(Color::WHITE, text)?,
-        )
+        let mut state = self.state.borrow_mut();
+
+        let root_pane = Pane {
+            rect: state.canvas.surface().rect(),
+            children: vec![
+                Pane {
+                    rect: Rect::new(0, 0, 1015, 630),
+                    contents: PaneContents::Image(&self.background),
+                    ..Default::default()
+                }
+                .into(),
+                Pane {
+                    rect: Rect::new(0, 190, 68, 68),
+                    contents: PaneContents::Image(&self.swiss_flag),
+                    ..Default::default()
+                }
+                .into(),
+                Pane {
+                    rect: Rect::new(0, 0, 811, 10),
+                    contents: PaneContents::Custom(&|canvas, rect| {
+                        for i in 0..101 {
+                            let x = rect.x + i * 8;
+                            // WARNING: filled_circle takes in ABGR instead of RGBA
+                            canvas.filled_circle(
+                                x as i16 + 4,
+                                rect.y as i16 + 4,
+                                2,
+                                (64, 255, 255, 255),
+                            )?;
+                        }
+                        Ok(())
+                    }),
+                    ..Default::default()
+                }
+                .into(),
+                Pane {
+                    name: "progress_pane",
+                    children: vec![
+                        Pane {
+                            rect: Rect::new(0, 90, 850, 147),
+                            contents: PaneContents::Text {
+                                text: get_text(LANG, "calculating").into(),
+                                font: &self.bold_font,
+                                color: Color::WHITE,
+                                scale: (0.6, 0.59),
+                                text_alignment: Alignment::CENTER,
+                            },
+                            ..Default::default()
+                        }
+                        .into(),
+                        Pane {
+                            name: "progress_text",
+                            rect: Rect::new(-54, -108, 200, 206),
+                            contents: PaneContents::Text {
+                                text: (progress - 1).to_string().into(),
+                                font: &self.bold_font,
+                                color: Color::WHITE,
+                                scale: (1.2, 1.19),
+                                text_alignment: Alignment::CENTER,
+                            },
+                            ..Default::default()
+                        }
+                        .into(),
+                        Pane {
+                            rect: Rect::new(2, -126, 200, 150),
+                            anchor: Alignment::LEFT,
+                            contents: PaneContents::Text {
+                                text: format!("/{total}").into(),
+                                font: &self.bold_font,
+                                color: Color::WHITE,
+                                scale: (0.8, 0.8),
+                                text_alignment: Alignment::LEFT,
+                            },
+                            ..Default::default()
+                        }
+                        .into(),
+                    ],
+                    ..Default::default()
+                }
+                .into(),
+            ],
+            ..Default::default()
+        }.build();
+        let progress_text = root_pane
+            .child(&["progress_pane", "progress_text"])
+            .unwrap();
+
+        for frame in 0..=WINDOW_IN_SCALE.duration() as u32 {
+            root_pane.edit(|x| {
+                x.scale = WINDOW_IN_SCALE.value_at(frame as f64);
+                x.alpha = WINDOW_IN_ALPHA.value_at(frame as f64) as u8;
+            });
+            state.render_frame(&root_pane, 1)?;
+        }
+
+        root_pane.edit(|x| {
+            x.scale = 1.0;
+            x.alpha = 255;
+        });
+        state.render_frame(&root_pane, 60)?;
+
+        progress_text.edit(|x| x.alpha = 0);
+        state.render_frame(&root_pane, 1)?;
+
+        progress_text.edit(|x| {
+            if let PaneContents::Text { text, .. } = &mut x.contents {
+                *text = Cow::Owned(progress.to_string());
+            }
+        });
+        for frame in 0..=PROGRESS_IN_SCALE.duration() as u32 {
+            progress_text.edit(|x| {
+                x.scale = PROGRESS_IN_SCALE.value_at(frame as f64);
+                x.alpha = PROGRESS_IN_ALPHA.value_at(frame as f64) as u8;
+            });
+            state.render_frame(&root_pane, 1)?;
+        }
+
+        progress_text.edit(|x| {
+            x.scale = 1.0;
+            x.alpha = 255;
+        });
+        state.render_frame(&root_pane, 60)?;
+
+        for frame in 0..=WINDOW_OUT_SCALE.duration() as u32 {
+            root_pane.edit(|x| {
+                x.scale = WINDOW_OUT_SCALE.value_at(frame as f64);
+                x.alpha = WINDOW_OUT_ALPHA.value_at(frame as f64) as u8;
+            });
+            state.render_frame(&root_pane, 1)?;
+        }
+
+        root_pane.edit(|x| {
+            x.scale = 1.0;
+            x.alpha = 0;
+        });
+        state.render_frame(&root_pane, 60)?;
+
+        state.push_frame(0);
+
+        Ok(())
+    }
+}
+
+type FramesVec = Vec<(Vec<u8>, u32)>;
+
+struct GeneratorState {
+    canvas: SurfaceCanvas<'static>,
+    frames: FramesVec,
+}
+
+impl GeneratorState {
+    fn render_frame(&mut self, pane: &BuiltPane, duration_frames: u32) -> Result<()> {
+        self.clear_canvas();
+        pane.render(&mut self.canvas)?;
+        self.push_frame(duration_frames);
+        Ok(())
     }
 
-    fn layout_surface(
-        canvas: &mut SurfaceCanvas,
-        container: impl Into<Rect>,
-        anchor: impl Into<Alignment>,
-        surface_alignment: impl Into<Alignment>,
-        (x_scale, y_scale): (f64, f64),
-        surface: &Surface,
-    ) -> Result<()> {
-        let container = container.into();
-        let anchor = anchor.into();
-        let surface_alignment = surface_alignment.into();
-
-        let container_x =
-            HALF_WIDTH + container.x() - anchor.horizontal.align(container.width() as i32);
-        let container_y =
-            HALF_HEIGHT - container.y() - anchor.vertical.align(container.height() as i32);
-        let text_rel_x = surface_alignment.horizontal.align(container.width() as i32)
-            - surface_alignment
-                .horizontal
-                .align((surface.width() as f64 * x_scale) as i32);
-        let text_rel_y = surface_alignment.vertical.align(container.height() as i32)
-            - surface_alignment
-                .vertical
-                .align((surface.height() as f64 * y_scale) as i32);
-
-        let rect = Rect::new(
-            container_x + text_rel_x,
-            container_y + text_rel_y,
-            (surface.width() as f64 * x_scale) as u32,
-            (surface.height() as f64 * y_scale) as u32,
-        );
-        surface.blit_scaled(None, canvas.surface_mut(), rect)?;
-        Ok(())
+    fn clear_canvas(&mut self) {
+        const CLEAR_COLOR: Color = Color::RGBA(0, 0, 0, 0);
+        self.canvas.set_draw_color(CLEAR_COLOR);
+        self.canvas.set_blend_mode(BlendMode::None);
+        self.canvas.clear();
     }
 
     fn push_frame(&mut self, duration_frames: u32) {

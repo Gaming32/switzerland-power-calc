@@ -5,9 +5,10 @@ use switzerland_power_animated::{AnimationGenerator, PowerStatus, Result};
 
 fn main() -> Result<()> {
     let generator = AnimationGenerator::new()?;
-    let image = generator.generate(PowerStatus::Calculating {
-        progress: 4,
-        total: 5,
+    let image = generator.generate(PowerStatus::Calculated {
+        calculation_rounds: 4,
+        power: 1743.2,
+        rank: 34,
     })?;
     drop(generator);
 
