@@ -138,14 +138,14 @@ impl FrameGenerator {
 
         for i in 0..101 {
             let x = HALF_WIDTH - 405 + i * 8;
-            const Y: i32 = HALF_HEIGHT + 48 - 5;
+            const Y: i32 = HALF_HEIGHT - 5;
             // WARNING: filled_circle takes in ABGR instead of RGBA
             base_window.filled_circle(x as i16 + 4, Y as i16 + 4, 2, (64, 255, 255, 255))?;
         }
 
         self.print_text(
             &mut base_window,
-            (0, -50 + 90, 850, 147),
+            (0, 90, 850, 147),
             Alignment::CENTER,
             Alignment::CENTER,
             (0.6, 0.59),
@@ -154,7 +154,7 @@ impl FrameGenerator {
 
         self.print_text(
             &mut base_window,
-            (2, -50 - 126, 200, 150),
+            (2, -126, 200, 150),
             (Left, Middle),
             (Left, Middle),
             (0.8, 0.8),
@@ -170,7 +170,7 @@ impl FrameGenerator {
                 .blit(None, base_window_with_progress.surface_mut(), None)?;
             self.print_text(
                 &mut base_window_with_progress,
-                (-54, -50 - 108, 200, 206),
+                (-54, -108, 200, 206),
                 Alignment::CENTER,
                 Alignment::CENTER,
                 (1.2, 1.2),
@@ -219,7 +219,7 @@ impl FrameGenerator {
             ) -> Result<()> {
                 FrameGenerator::layout_surface(
                     canvas,
-                    (-54, -50 - 108, 200, 206),
+                    (-54, -108, 200, 206),
                     Alignment::CENTER,
                     Alignment::CENTER,
                     (1.2 * scale, 1.2 * scale),
