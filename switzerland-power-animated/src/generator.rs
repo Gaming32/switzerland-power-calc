@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::animation::{AnimationSet, AnimationTrack};
+use crate::animation::AnimationSet;
 use crate::font::FontSet;
 use crate::layout::{BuiltPane, PaneContents};
 use crate::panes::{calc_rank_pane, power_progress_pane};
@@ -248,14 +248,7 @@ impl AnimationGenerator {
         power_text.set_text(get_text(LANG, "power"));
         power_value_text.set_text(format_power(LANG, "power_value", old_power));
 
-        state.animate_transition(
-            &self.power_progress_pane,
-            &self.power_progress_pane,
-            WINDOW_IN_SCALE,
-            WINDOW_IN_SCALE,
-            WINDOW_IN_ALPHA,
-            1,
-        )?;
+        state.animate(&self.power_progress_pane, WINDOW_IN, 1)?;
 
         let win_text = get_text(LANG, "win");
         let lose_text = get_text(LANG, "lose");
@@ -275,26 +268,17 @@ impl AnimationGenerator {
             base_pane.edit(|x| x.rect.reposition(pos));
             text_pane.set_text_and_color(text, color);
 
-            state.animate_transition(
+            state.animate_specific_pane(
                 &self.power_progress_pane,
                 animation_pane,
-                WIN_LOSE_IN_SCALE,
-                WIN_LOSE_IN_SCALE,
-                WIN_LOSE_IN_ALPHA,
+                WIN_LOSE_IN,
                 0,
             )?;
         }
         state.push_frame(60);
 
         set_score_text.set_text(format!("{wins} - {losses}"));
-        state.animate_transition(
-            &self.power_progress_pane,
-            &set_score_text,
-            SET_SCORE_IN_SCALE_X,
-            SET_SCORE_IN_SCALE_Y,
-            SET_SCORE_IN_ALPHA,
-            60,
-        )?;
+        state.animate(&self.power_progress_pane, SET_SCORE_IN, 60)?;
 
         Ok(())
     }
@@ -308,46 +292,23 @@ struct GeneratorState {
 }
 
 impl GeneratorState {
-    fn animate_transition(
-        &mut self,
-        root_pane: &BuiltPane,
-        pane: &BuiltPane,
-        x_scale_anim: AnimationTrack,
-        y_scale_anim: AnimationTrack,
-        alpha_anim: AnimationTrack,
-        end_delay: u32,
-    ) -> Result<()> {
-        let duration = x_scale_anim
-            .duration()
-            .max(y_scale_anim.duration())
-            .max(alpha_anim.duration());
-        for frame in 0..=duration as u32 {
-            pane.edit(|x| {
-                x.scale = (
-                    x_scale_anim.value_at(frame as f64),
-                    y_scale_anim.value_at(frame as f64),
-                );
-                x.alpha = alpha_anim.value_at(frame as f64) as u8;
-            });
-            self.render_frame(root_pane, 1)?;
-        }
-
-        pane.edit(|x| {
-            x.scale = (x_scale_anim.ending_value(), y_scale_anim.ending_value());
-            x.alpha = alpha_anim.ending_value() as u8;
-        });
-        self.render_frame(root_pane, end_delay)?;
-
-        Ok(())
-    }
-
     fn animate<const N: usize>(
         &mut self,
         root_pane: &BuiltPane,
         animation: AnimationSet<N>,
         end_delay: u32,
     ) -> Result<()> {
-        animation.animate(root_pane, end_delay, |pane, duration| {
+        self.animate_specific_pane(root_pane, root_pane, animation, end_delay)
+    }
+
+    fn animate_specific_pane<const N: usize>(
+        &mut self,
+        render_pane: &BuiltPane,
+        origin_pane: &BuiltPane,
+        animation: AnimationSet<N>,
+        end_delay: u32,
+    ) -> Result<()> {
+        animation.animate(render_pane, origin_pane, end_delay, |pane, duration| {
             self.render_frame(pane, duration)
         })
     }

@@ -85,7 +85,8 @@ impl<const N: usize> AnimationSet<N> {
 
     pub fn animate(
         &self,
-        root_pane: &BuiltPane,
+        render_pane: &BuiltPane,
+        origin_pane: &BuiltPane,
         end_delay: u32,
         mut render_frame: impl FnMut(&BuiltPane, u32) -> Result<()>,
     ) -> Result<()> {
@@ -94,7 +95,7 @@ impl<const N: usize> AnimationSet<N> {
             animations: &'static [(AnimatableParameter, AnimationTrack)],
         }
         let elements = self.elements.map(|element| {
-            let pane = root_pane
+            let pane = origin_pane
                 .child(element.path)
                 .unwrap_or_else(|| panic!("Missing animation element {:?}", element.path));
             ResolvedElement {
@@ -117,7 +118,7 @@ impl<const N: usize> AnimationSet<N> {
                     }
                 });
             }
-            render_frame(root_pane, 1)?;
+            render_frame(render_pane, 1)?;
         }
 
         for element in elements.iter() {
@@ -127,7 +128,7 @@ impl<const N: usize> AnimationSet<N> {
                 }
             });
         }
-        render_frame(root_pane, end_delay)?;
+        render_frame(render_pane, end_delay)?;
 
         Ok(())
     }

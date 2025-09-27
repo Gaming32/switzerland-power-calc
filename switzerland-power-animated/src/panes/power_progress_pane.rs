@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::alignment::Alignment;
-use crate::animation::{AnimationTrack, Keyframe};
+use crate::animation::AnimatableParameter::{Alpha, Scale, XScale, YScale};
+use crate::animation::{AnimationSet, AnimationSetElement, AnimationTrack, Keyframe};
 use crate::font::FontSet;
 use crate::generator::{HEIGHT, WIDTH};
 use crate::layout::{BuiltPane, Pane, PaneContents};
@@ -183,24 +184,25 @@ fn win_lose_pane(
     .build())
 }
 
-pub const WINDOW_IN_SCALE: AnimationTrack = AnimationTrack::new(&[
-    Keyframe::new(0.000129002059, 0.0, 0.8),
-    Keyframe::new(0.0143402768, 8.0, 1.07803428),
-    Keyframe::new(-0.0130057139, 12.0, 0.97208333),
-    Keyframe::new(0.0, 14.0, 1.0),
-]);
-
-pub const WINDOW_IN_ALPHA: AnimationTrack =
-    AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 0.0), Keyframe::new(0.0, 6.0, 255.0)]);
-
-pub const WIN_LOSE_IN_SCALE: AnimationTrack = AnimationTrack::new(&[
-    Keyframe::new(0.175000012, 0.0, 0.5),
-    Keyframe::new(0.0833333358, 4.0, 1.2),
-    Keyframe::new(-0.100000024, 6.0, 1.0),
-]);
-
-pub const WIN_LOSE_IN_ALPHA: AnimationTrack =
-    AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 0.0), Keyframe::new(0.0, 2.0, 255.0)]);
+pub const WINDOW_IN: AnimationSet<1> = AnimationSetElement::new(
+    &[],
+    &[
+        (
+            Scale,
+            AnimationTrack::new(&[
+                Keyframe::new(0.000129002059, 0.0, 0.8),
+                Keyframe::new(0.0143402768, 8.0, 1.07803428),
+                Keyframe::new(-0.0130057139, 12.0, 0.97208333),
+                Keyframe::new(0.0, 14.0, 1.0),
+            ]),
+        ),
+        (
+            Alpha,
+            AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 0.0), Keyframe::new(0.0, 6.0, 255.0)]),
+        ),
+    ],
+)
+.to_set();
 
 pub const WIN_LOSE_POSITIONS: [[(i32, i32); 5]; 4] = [
     [(-104, 147), (104, 147), (207, 147), (-207, 122), (0, 122)],
@@ -209,15 +211,42 @@ pub const WIN_LOSE_POSITIONS: [[(i32, i32); 5]; 4] = [
     [(-207, 172), (0, 172), (207, 172), (-207, 122), (0, 122)],
 ];
 
-pub const SET_SCORE_IN_SCALE_X: AnimationTrack =
-    AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 1.0)]);
+pub const WIN_LOSE_IN: AnimationSet<1> = AnimationSetElement::new(
+    &[],
+    &[
+        (
+            Scale,
+            AnimationTrack::new(&[
+                Keyframe::new(0.175000012, 0.0, 0.5),
+                Keyframe::new(0.0833333358, 4.0, 1.2),
+                Keyframe::new(-0.100000024, 6.0, 1.0),
+            ]),
+        ),
+        (
+            Alpha,
+            AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 0.0), Keyframe::new(0.0, 2.0, 255.0)]),
+        ),
+    ],
+)
+.to_set();
 
-pub const SET_SCORE_IN_SCALE_Y: AnimationTrack = AnimationTrack::new(&[
-    Keyframe::new(0.193693876, 0.0, 0.5),
-    Keyframe::new(0.07790083, 4.0, 1.27477551),
-    Keyframe::new(-0.0686938763, 6.0, 0.967404962),
-    Keyframe::new(0.01629752, 8.0, 1.0),
-]);
-
-pub const SET_SCORE_IN_ALPHA: AnimationTrack =
-    AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 0.0), Keyframe::new(0.0, 4.0, 255.0)]);
+pub const SET_SCORE_IN: AnimationSet<1> = AnimationSetElement::new(
+    &["set_outcome_pane", "set_score_text"],
+    &[
+        (XScale, AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 1.0)])),
+        (
+            YScale,
+            AnimationTrack::new(&[
+                Keyframe::new(0.193693876, 0.0, 0.5),
+                Keyframe::new(0.07790083, 4.0, 1.27477551),
+                Keyframe::new(-0.0686938763, 6.0, 0.967404962),
+                Keyframe::new(0.01629752, 8.0, 1.0),
+            ]),
+        ),
+        (
+            Alpha,
+            AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 0.0), Keyframe::new(0.0, 4.0, 255.0)]),
+        ),
+    ],
+)
+.to_set();
