@@ -26,7 +26,7 @@ fn main() {
                     )),
                 )
                 .entry(
-                    "calculation_complete",
+                    "calculated",
                     lit(get_translation(
                         "LayoutMsg/Lobby_ResultPower_00",
                         "T_Rank_00",

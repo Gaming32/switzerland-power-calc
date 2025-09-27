@@ -199,6 +199,10 @@ impl BuiltPane {
         editor(&mut self.0.borrow_mut())
     }
 
+    pub fn set_text(&self, new_text: impl Into<Cow<'static, str>>) {
+        self.edit(|x| x.contents.set_text(new_text))
+    }
+
     pub fn render(&self, canvas: &mut SurfaceCanvas) -> Result<()> {
         let center = canvas.surface().rect().center();
         let pane = self.pane();

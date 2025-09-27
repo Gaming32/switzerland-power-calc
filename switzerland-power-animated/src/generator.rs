@@ -3,8 +3,9 @@ use crate::Result;
 use crate::alignment::Alignment;
 use crate::animation::AnimationTrack;
 use crate::animations::{
-    PROGRESS_IN_ALPHA, PROGRESS_IN_SCALE, WINDOW_IN_ALPHA, WINDOW_IN_SCALE, WINDOW_OUT_ALPHA,
-    WINDOW_OUT_SCALE,
+    PROGRESS_IN_ALPHA, PROGRESS_IN_SCALE, RESULT_PANE_ALPHA, RESULT_POWER_SCALE,
+    RESULT_PROGRESS_ALPHA, RESULT_PROGRESS_SCALE, WINDOW_IN_ALPHA, WINDOW_IN_SCALE,
+    WINDOW_OUT_ALPHA, WINDOW_OUT_SCALE,
 };
 use crate::font::FontSet;
 use crate::layout::{BuiltPane, Pane, PaneContents};
@@ -33,10 +34,15 @@ pub struct AnimationGenerator {
     state: RefCell<GeneratorState>,
 
     root_pane: BuiltPane,
+
     progress_pane: BuiltPane,
     calculating_text: BuiltPane,
     progress_text: BuiltPane,
     total_text: BuiltPane,
+
+    result_pane: BuiltPane,
+    calculated_text: BuiltPane,
+    power_text: BuiltPane,
 
     _sdl_ttf: Sdl2TtfContext,
     _sdl_image: Sdl2ImageContext,
@@ -107,7 +113,7 @@ impl AnimationGenerator {
                             name: "calculating_text",
                             rect: Rect::new(0, 90, 850, 147),
                             contents: PaneContents::Text {
-                                text: "Calculating...".into(),
+                                text: "".into(),
                                 font: bold_font.clone(),
                                 color: Color::WHITE,
                                 scale: (0.6, 0.59),
@@ -120,7 +126,7 @@ impl AnimationGenerator {
                             name: "progress_text",
                             rect: Rect::new(-54, -108, 200, 206),
                             contents: PaneContents::Text {
-                                text: "0".into(),
+                                text: "".into(),
                                 font: bold_font.clone(),
                                 color: Color::WHITE,
                                 scale: (1.2, 1.19),
@@ -134,11 +140,45 @@ impl AnimationGenerator {
                             rect: Rect::new(2, -126, 200, 150),
                             anchor: Alignment::LEFT,
                             contents: PaneContents::Text {
-                                text: "/0".into(),
+                                text: "".into(),
                                 font: bold_font.clone(),
                                 color: Color::WHITE,
                                 scale: (0.8, 0.8),
                                 text_alignment: Alignment::LEFT,
+                            },
+                            ..Default::default()
+                        }
+                        .into(),
+                    ],
+                    ..Default::default()
+                }
+                .into(),
+                Pane {
+                    name: "result_pane",
+                    alpha: 0,
+                    children: vec![
+                        Pane {
+                            name: "calculated_text",
+                            rect: Rect::new(0, 90, 850, 147),
+                            contents: PaneContents::Text {
+                                text: "".into(),
+                                font: bold_font.clone(),
+                                color: Color::RGB(218, 41, 28),
+                                scale: (0.6, 0.59),
+                                text_alignment: Alignment::CENTER,
+                            },
+                            ..Default::default()
+                        }
+                        .into(),
+                        Pane {
+                            name: "power_text",
+                            rect: Rect::new(5, -106, 800, 294),
+                            contents: PaneContents::Text {
+                                text: "".into(),
+                                font: bold_font.clone(),
+                                color: Color::WHITE,
+                                scale: (1.2, 1.19),
+                                text_alignment: Alignment::CENTER,
                             },
                             ..Default::default()
                         }
@@ -157,6 +197,10 @@ impl AnimationGenerator {
         let progress_text = progress_pane.child(&["progress_text"]).unwrap();
         let total_text = progress_pane.child(&["total_text"]).unwrap();
 
+        let result_pane = root_pane.child(&["result_pane"]).unwrap();
+        let calculated_text = result_pane.child(&["calculated_text"]).unwrap();
+        let power_text = result_pane.child(&["power_text"]).unwrap();
+
         Ok(Self {
             state: RefCell::new(GeneratorState {
                 canvas: Surface::new(WIDTH, HEIGHT, PIXEL_FORMAT)?.into_canvas()?,
@@ -164,10 +208,15 @@ impl AnimationGenerator {
             }),
 
             root_pane,
+
             progress_pane,
             calculating_text,
             progress_text,
             total_text,
+
+            result_pane,
+            calculated_text,
+            power_text,
 
             _sdl: sdl,
             _sdl_image: sdl_image,
@@ -208,22 +257,21 @@ impl AnimationGenerator {
         &self,
         progress: u32,
         total: u32,
-        _calculated_power: Option<f64>,
+        calculated_power: Option<f64>,
     ) -> Result<()> {
         let mut state = self.state.borrow_mut();
 
         self.calculating_text
-            .edit(|x| x.contents.set_text(get_text(LANG, "calculating")));
-        self.progress_text
-            .edit(|x| x.contents.set_text((progress - 1).to_string()));
-        self.total_text
-            .edit(|x| x.contents.set_text(format!("/{total}")));
+            .set_text(get_text(LANG, "calculating"));
+        self.progress_text.set_text((progress - 1).to_string());
+        self.total_text.set_text(format!("/{total}"));
 
         state.animate_transition(
             &self.root_pane,
             &self.root_pane,
             WINDOW_IN_SCALE,
             WINDOW_IN_ALPHA,
+            60,
         )?;
 
         self.progress_text.edit(|x| x.alpha = 0);
@@ -236,15 +284,48 @@ impl AnimationGenerator {
             &self.progress_text,
             PROGRESS_IN_SCALE,
             PROGRESS_IN_ALPHA,
+            60,
         )?;
 
+        if let Some(calculated_power) = calculated_power {
+            self.calculated_text.set_text(get_text(LANG, "calculated"));
+            self.power_text.set_text(format!("{:.1}", calculated_power));
+
+            for frame in 0..=RESULT_POWER_SCALE.duration() as u32 {
+                self.progress_pane.edit(|x| {
+                    x.scale = RESULT_PROGRESS_SCALE.value_at(frame as f64);
+                    x.alpha = RESULT_PROGRESS_ALPHA.value_at(frame as f64) as u8;
+                });
+                self.result_pane.edit(|x| {
+                    x.alpha = RESULT_PANE_ALPHA.value_at(frame as f64) as u8;
+                });
+                self.power_text.edit(|x| {
+                    x.scale = RESULT_POWER_SCALE.value_at(frame as f64);
+                });
+                state.render_frame(&self.root_pane, 1)?;
+            }
+
+            self.progress_pane.edit(|x| {
+                x.scale = 1.0;
+                x.alpha = 0;
+            });
+            self.result_pane.edit(|x| {
+                x.alpha = 255;
+            });
+            self.power_text.edit(|x| {
+                x.scale = 1.0;
+            });
+            state.render_frame(&self.root_pane, 60)?;
+        }
+
+        state.push_frame(60);
         state.animate_transition(
             &self.root_pane,
             &self.root_pane,
             WINDOW_OUT_SCALE,
             WINDOW_OUT_ALPHA,
+            60,
         )?;
-
         state.push_frame(0);
 
         Ok(())
@@ -265,6 +346,7 @@ impl GeneratorState {
         pane: &BuiltPane,
         scale_anim: AnimationTrack,
         alpha_anim: AnimationTrack,
+        end_delay: u32,
     ) -> Result<()> {
         for frame in 0..=scale_anim.duration() as u32 {
             pane.edit(|x| {
@@ -278,7 +360,7 @@ impl GeneratorState {
             x.scale = scale_anim.ending_value();
             x.alpha = alpha_anim.ending_value() as u8;
         });
-        self.render_frame(root_pane, 60)?;
+        self.render_frame(root_pane, end_delay)?;
 
         Ok(())
     }
