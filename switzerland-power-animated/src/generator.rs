@@ -275,8 +275,8 @@ impl GeneratorState {
         }
 
         pane.edit(|x| {
-            x.scale = scale_anim.ending_value(1.0);
-            x.alpha = alpha_anim.ending_value(255.0) as u8;
+            x.scale = scale_anim.ending_value();
+            x.alpha = alpha_anim.ending_value() as u8;
         });
         self.render_frame(root_pane, 60)?;
 

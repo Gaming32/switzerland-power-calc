@@ -209,17 +209,22 @@ impl BuiltPane {
         if path.is_empty() {
             return Some(self.clone());
         }
+
+        if let [single_name] = *path {
+            return self
+                .pane()
+                .children
+                .iter()
+                .find(|x| x.borrow().name == single_name)
+                .map(|x| BuiltPane(x.clone()));
+        }
+
         let search_name = *path.first().unwrap();
         self.pane()
             .children
             .iter()
-            .cloned()
-            .map(BuiltPane)
-            .filter_map(|x| {
-                (x.pane().name == search_name)
-                    .then(|| x.child(&path[1..]))
-                    .flatten()
-            })
+            .filter(|x| x.borrow().name == search_name)
+            .filter_map(|x| BuiltPane(x.clone()).child(&path[1..]))
             .next()
     }
 }

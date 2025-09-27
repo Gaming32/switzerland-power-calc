@@ -31,16 +31,15 @@ impl AnimationTrack {
         self.keyframes.last().map_or(0.0, |x| x.frame)
     }
 
-    pub fn ending_value(&self, default: f64) -> f64 {
-        self.keyframes.last().map_or(default, |x| x.value)
+    pub fn ending_value(&self) -> f64 {
+        self.keyframes.last().map_or(0.0, |x| x.value)
     }
 
     pub fn value_at(&self, frame: f64) -> f64 {
-        if self.keyframes.is_empty() {
-            return 0.0;
-        }
-        if self.keyframes.len() == 1 {
-            return self.keyframes[0].value;
+        match self.keyframes {
+            [] => return 0.0,
+            [keyframe] => return keyframe.value,
+            _ => {}
         }
 
         let mut before = self.keyframes.first().unwrap();
