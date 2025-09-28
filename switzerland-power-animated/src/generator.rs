@@ -302,6 +302,34 @@ impl AnimationGenerator {
             .set_text(power_change);
         state.animate(&self.power_progress_pane, POWER_ADD, 1)?;
 
+        let power_distance = (new_power - old_power).abs();
+        let change_per_frame = power_distance.powf(0.1).max(power_distance / 180.0);
+        let mut display_power = old_power;
+        let mut render_power = |power, duration| {
+            power_value_text.set_text(format_power(LANG, "power_value", power));
+            state.render_frame(&self.power_progress_pane, duration)
+        };
+        if new_power >= old_power {
+            loop {
+                display_power += change_per_frame;
+                if display_power >= new_power {
+                    break;
+                }
+                render_power(display_power, 1)?;
+            }
+        } else {
+            loop {
+                display_power -= change_per_frame;
+                if display_power <= new_power {
+                    break;
+                }
+                render_power(display_power, 1)?;
+            }
+        }
+        render_power(new_power, 30)?;
+
+        state.animate(&self.power_progress_pane, WINDOW_OUT, 2)?;
+
         state.push_frame(0);
 
         Ok(())

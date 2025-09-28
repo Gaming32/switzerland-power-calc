@@ -394,3 +394,21 @@ pub const POWER_ADD: AnimationSet<2> = AnimationSet::new([
         ],
     ),
 ]);
+
+pub const WINDOW_OUT: AnimationSet<1> = AnimationSetElement::new(
+    &[],
+    &[
+        (
+            Scale,
+            AnimationTrack::new(&[
+                Keyframe::new(0.0, 0.0, 1.0),
+                Keyframe::new(0.0, 6.0, 1.0666821),
+            ]),
+        ),
+        (
+            Alpha,
+            AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 255.0), Keyframe::new(0.0, 6.0, 0.0)]),
+        ),
+    ],
+)
+.to_set();

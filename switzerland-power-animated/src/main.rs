@@ -8,7 +8,7 @@ fn main() -> Result<()> {
     let generator = AnimationGenerator::new()?;
     let image = generator.generate(PowerStatus::SetPlayed {
         matches: [Win, Lose, Win, Win, Unplayed],
-        old_power: 2675.2,
+        old_power: 1743.2,
         new_power: 1792.8,
         old_rank: 34,
         new_rank: 28,
