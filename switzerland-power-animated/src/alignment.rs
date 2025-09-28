@@ -1,5 +1,4 @@
 #[derive(Debug, Copy, Clone)]
-#[allow(dead_code)]
 pub enum HorizontalAlignment {
     Left,
     Center,
@@ -35,6 +34,7 @@ pub struct Alignment {
 impl Alignment {
     pub const LEFT: Self = Self::new(HorizontalAlignment::Left, VerticalAlignment::Middle);
     pub const CENTER: Self = Self::new(HorizontalAlignment::Center, VerticalAlignment::Middle);
+    pub const RIGHT: Self = Self::new(HorizontalAlignment::Right, VerticalAlignment::Middle);
     pub const BOTTOM: Self = Self::new(HorizontalAlignment::Center, VerticalAlignment::Bottom);
 
     pub const fn new(horizontal: HorizontalAlignment, vertical: VerticalAlignment) -> Self {

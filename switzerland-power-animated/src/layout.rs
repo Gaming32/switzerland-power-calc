@@ -73,7 +73,7 @@ impl Pane {
                 *color = new_color;
             }
         } else {
-            panic!("PaneContents::set_text called on a non-Text Pane!");
+            panic!("Pane::set_text_and_color called on a non-Text Pane!");
         }
     }
 

@@ -6,6 +6,11 @@ use switzerland_power_animated::{AnimationGenerator, PowerStatus, Result};
 
 fn main() -> Result<()> {
     let generator = AnimationGenerator::new()?;
+    // let image = generator.generate(PowerStatus::Calculated {
+    //     calculation_rounds: 4,
+    //     power: 1743.2,
+    //     rank: 34,
+    // })?;
     let image = generator.generate(PowerStatus::SetPlayed {
         matches: [Win, Lose, Win, Win, Unplayed],
         old_power: 1743.2,

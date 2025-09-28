@@ -181,10 +181,50 @@ pub fn calc_rank_pane(
                                 ..Pane::EMPTY
                             }
                             .build(),
+                            rank_arrows()?,
                         ],
                         ..Pane::EMPTY
                     }
                     .build(),
+                ],
+                ..Pane::EMPTY
+            }
+            .build(),
+        ],
+        ..Pane::EMPTY
+    }
+    .build())
+}
+
+fn rank_arrows() -> Result<BuiltPane> {
+    fn arrow(name: &'static str, bytes: &'static [u8]) -> Result<BuiltPane> {
+        Ok(Pane {
+            name,
+            rect: Rect::new(15, -5, 165, 165),
+            alpha: 0,
+            contents: PaneContents::image_png(bytes)?,
+            ..Pane::EMPTY
+        }
+        .build())
+    }
+
+    Ok(Pane {
+        name: "rank_arrow_root",
+        rect: Rect::new(0, 8, 400, 128),
+        children: vec![
+            Pane {
+                rect: Rect::new(0, -4, 45, 60),
+                parent_anchor: Alignment::RIGHT,
+                children: vec![
+                    arrow(
+                        "rank_stay_arrow",
+                        include_bytes!("images/rank-stay-arrow.png"),
+                    )?,
+                    arrow("rank_up_arrow", include_bytes!("images/rank-up-arrow.png"))?,
+                    arrow(
+                        "rank_down_arrow",
+                        include_bytes!("images/rank-down-arrow.png"),
+                    )?,
                 ],
                 ..Pane::EMPTY
             }
