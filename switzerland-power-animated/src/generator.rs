@@ -280,6 +280,30 @@ impl AnimationGenerator {
         set_score_text.set_text(format!("{wins} - {losses}"));
         state.animate(&self.power_progress_pane, SET_SCORE_IN, 60)?;
 
+        let power_change = format_power(
+            LANG,
+            if new_power >= old_power {
+                "power_up"
+            } else {
+                "power_down"
+            },
+            new_power - old_power,
+        );
+
+        power_pane
+            .child(&["power_diff", "value"])
+            .unwrap()
+            .set_text(power_change.clone());
+        state.animate(&self.power_progress_pane, POWER_DIFF_IN, 2)?;
+
+        power_pane
+            .child(&["point_diff_anim"])
+            .unwrap()
+            .set_text(power_change);
+        state.animate(&self.power_progress_pane, POWER_ADD, 1)?;
+
+        state.push_frame(0);
+
         Ok(())
     }
 }

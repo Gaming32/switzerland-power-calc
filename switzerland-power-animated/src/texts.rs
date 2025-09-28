@@ -30,7 +30,7 @@ pub enum FmtKey {
 }
 
 pub fn format_power(lang: &str, key: &'static str, power: f64) -> String {
-    let power = (power * 10.0) as u32;
+    let power = (power * 10.0).floor().abs() as u32;
     let integer = power / 10;
     let fraction = power % 10;
     get_text_fmt(

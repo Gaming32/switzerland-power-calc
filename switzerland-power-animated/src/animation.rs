@@ -155,18 +155,22 @@ impl AnimationSetElement {
 
 #[derive(Copy, Clone, Debug)]
 pub enum AnimatableParameter {
+    TranslateX,
+    TranslateY,
     Scale,
-    XScale,
-    YScale,
+    ScaleX,
+    ScaleY,
     Alpha,
 }
 
 impl AnimatableParameter {
     pub fn set_value(&self, pane: &mut Pane, value: f64) {
         match self {
+            AnimatableParameter::TranslateX => pane.rect.set_x(value as i32),
+            AnimatableParameter::TranslateY => pane.rect.set_y(value as i32),
             AnimatableParameter::Scale => pane.set_scale(value),
-            AnimatableParameter::XScale => pane.scale.0 = value,
-            AnimatableParameter::YScale => pane.scale.1 = value,
+            AnimatableParameter::ScaleX => pane.scale.0 = value,
+            AnimatableParameter::ScaleY => pane.scale.1 = value,
             AnimatableParameter::Alpha => pane.alpha = value as u8,
         }
     }

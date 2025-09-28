@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::alignment::Alignment;
-use crate::animation::AnimatableParameter::{Alpha, Scale, XScale, YScale};
+use crate::animation::AnimatableParameter::{Alpha, Scale, ScaleX, ScaleY, TranslateX, TranslateY};
 use crate::animation::{AnimationSet, AnimationSetElement, AnimationTrack, Keyframe};
 use crate::font::FontSet;
 use crate::generator::{HEIGHT, WIDTH};
@@ -100,14 +100,21 @@ pub fn power_progress_pane(
                         name: "power_diff",
                         rect: Rect::new(341, 87, 158, 163),
                         scale: (1.19, 1.19),
+                        alpha: 0,
                         children: vec![
                             Pane {
-                                name: "image",
-                                rect: Rect::new(0, 12, 256, 225),
-                                scale: (0.6, 0.6),
-                                contents: PaneContents::image_png(include_bytes!(
-                                    "images/power-diff-background.png"
-                                ))?,
+                                name: "image_container",
+                                children: vec![
+                                    Pane {
+                                        rect: Rect::new(0, 12, 256, 225),
+                                        scale: (0.6, 0.6),
+                                        contents: PaneContents::image_png(include_bytes!(
+                                            "images/power-diff-background.png"
+                                        ))?,
+                                        ..Pane::EMPTY
+                                    }
+                                    .build(),
+                                ],
                                 ..Pane::EMPTY
                             }
                             .build(),
@@ -126,6 +133,20 @@ pub fn power_progress_pane(
                             }
                             .build(),
                         ],
+                        ..Pane::EMPTY
+                    }
+                    .build(),
+                    Pane {
+                        name: "point_diff_anim",
+                        rect: Rect::new(311, 76, 200, 76),
+                        alpha: 0,
+                        contents: PaneContents::Text {
+                            text: "+100.0".into(),
+                            font: bold_font.clone(),
+                            color: Color::WHITE,
+                            scale: (0.5, 0.5),
+                            text_alignment: Alignment::CENTER,
+                        },
                         ..Pane::EMPTY
                     }
                     .build(),
@@ -233,9 +254,9 @@ pub const WIN_LOSE_IN: AnimationSet<1> = AnimationSetElement::new(
 pub const SET_SCORE_IN: AnimationSet<1> = AnimationSetElement::new(
     &["set_outcome_pane", "set_score_text"],
     &[
-        (XScale, AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 1.0)])),
+        (ScaleX, AnimationTrack::new(&[Keyframe::new(0.0, 0.0, 1.0)])),
         (
-            YScale,
+            ScaleY,
             AnimationTrack::new(&[
                 Keyframe::new(0.193693876, 0.0, 0.5),
                 Keyframe::new(0.07790083, 4.0, 1.27477551),
@@ -250,3 +271,126 @@ pub const SET_SCORE_IN: AnimationSet<1> = AnimationSetElement::new(
     ],
 )
 .to_set();
+
+pub const POWER_DIFF_IN: AnimationSet<3> = AnimationSet::new([
+    AnimationSetElement::new(
+        &["power_pane", "power_diff"],
+        &[(
+            Alpha,
+            AnimationTrack::new(&[
+                Keyframe::new(31.875, 0.0, 0.0),
+                Keyframe::new(0.674603164, 8.0, 255.0),
+            ]),
+        )],
+    ),
+    AnimationSetElement::new(
+        &["power_pane", "power_diff", "image_container"],
+        &[
+            (
+                Scale,
+                AnimationTrack::new(&[
+                    Keyframe::new(0.0, 0.0, 1.52646542),
+                    Keyframe::new(0.0, 2.0, 2.0),
+                    Keyframe::new(0.0, 8.0, 1.0),
+                ]),
+            ),
+            (
+                Alpha,
+                AnimationTrack::new(&[
+                    Keyframe::new(0.0, 0.0, 3.0),
+                    Keyframe::new(0.0, 8.0, 255.0),
+                ]),
+            ),
+        ],
+    ),
+    AnimationSetElement::new(
+        &["power_pane", "power_diff", "value"],
+        &[
+            (
+                Scale,
+                AnimationTrack::new(&[
+                    Keyframe::new(0.0, 0.0, 1.43733871),
+                    Keyframe::new(-0.05466734, 6.0, 0.7287192),
+                    Keyframe::new(0.0, 8.0, 1.0),
+                ]),
+            ),
+            (
+                Alpha,
+                AnimationTrack::new(&[
+                    Keyframe::new(0.0, 0.0, 0.0),
+                    Keyframe::new(0.0, 8.0, 255.0),
+                ]),
+            ),
+        ],
+    ),
+]);
+
+pub const POWER_ADD: AnimationSet<2> = AnimationSet::new([
+    AnimationSetElement::new(
+        &["power_pane", "point_diff_anim"],
+        &[
+            (
+                TranslateX,
+                AnimationTrack::new(&[
+                    Keyframe::new(-14.6, 0.0, 311.0),
+                    Keyframe::new(-14.6, 20.0, 19.0),
+                ]),
+            ),
+            (
+                TranslateY,
+                AnimationTrack::new(&[
+                    Keyframe::new(3.05107236, 0.0, 76.0),
+                    Keyframe::new(0.5562192, 6.0, 94.3064346),
+                    Keyframe::new(-6.09331656, 13.0, 83.23085),
+                    Keyframe::new(-10.6044073, 20.0, 9.0),
+                ]),
+            ),
+            (
+                Alpha,
+                AnimationTrack::new(&[
+                    Keyframe::new(0.0, 0.0, 0.0),
+                    Keyframe::new(0.0, 2.0, 255.0),
+                    Keyframe::new(0.0, 17.0, 255.0),
+                    Keyframe::new(0.0, 20.0, 0.0),
+                ]),
+            ),
+        ],
+    ),
+    AnimationSetElement::new(
+        &["power_pane", "power_value_text"],
+        &[
+            (
+                TranslateY,
+                AnimationTrack::new(&[
+                    Keyframe::new(-6.33333349, 20.0, -22.0),
+                    Keyframe::new(-6.33333349, 23.0, -41.0),
+                    Keyframe::new(10.0, 23.0, -41.0),
+                    Keyframe::new(0.0, 25.0, -21.0),
+                    Keyframe::new(0.0, 26.0, -22.0),
+                ]),
+            ),
+            (
+                ScaleX,
+                AnimationTrack::new(&[
+                    Keyframe::new(0.0, 20.0, 1.0),
+                    Keyframe::new(-0.00681583071, 20.0, 1.0),
+                    Keyframe::new(-0.00681583071, 23.0, 0.9795525),
+                    Keyframe::new(0.0127114058, 23.0, 0.9795525),
+                    Keyframe::new(0.0, 25.0, 1.00497532),
+                    Keyframe::new(0.0, 26.0, 1.0),
+                ]),
+            ),
+            (
+                ScaleY,
+                AnimationTrack::new(&[
+                    Keyframe::new(0.0, 20.0, 1.0),
+                    Keyframe::new(-0.07112324, 20.0, 1.0),
+                    Keyframe::new(-0.07112324, 23.0, 0.7866303),
+                    Keyframe::new(0.109172523, 23.0, 0.7866303),
+                    Keyframe::new(0.0, 25.0, 1.00497532),
+                    Keyframe::new(0.0, 26.0, 1.0),
+                ]),
+            ),
+        ],
+    ),
+]);
