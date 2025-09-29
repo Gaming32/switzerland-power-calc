@@ -29,6 +29,8 @@ const LANG: &str = "USen"; // TODO: Make configurable
 pub(crate) const PIXEL_FORMAT: PixelFormatEnum = PixelFormatEnum::ABGR8888;
 
 pub struct AnimationGenerator {
+    webp_config: WebPConfig,
+
     state: RefCell<GeneratorState>,
 
     calc_rank_pane: BuiltPane,
@@ -41,6 +43,9 @@ pub struct AnimationGenerator {
 
 impl AnimationGenerator {
     pub fn new() -> Result<Self> {
+        let mut webp_config = WebPConfig::new().unwrap();
+        webp_config.quality = 50.0;
+
         let sdl = sdl2::init()?;
         let sdl_image = sdl2::image::init(InitFlag::PNG)?;
         let sdl_ttf = sdl2::ttf::init()?;
@@ -63,6 +68,8 @@ impl AnimationGenerator {
         let swiss_flag = PaneContents::image_png(include_bytes!("panes/images/swiss-flag.png"))?;
 
         Ok(Self {
+            webp_config,
+
             state: RefCell::new(GeneratorState {
                 canvas: Surface::new(WIDTH, HEIGHT, PIXEL_FORMAT)?.into_canvas()?,
                 frames: vec![],
@@ -81,13 +88,18 @@ impl AnimationGenerator {
         })
     }
 
+    pub fn webp_config_mut(&mut self) -> &mut WebPConfig {
+        &mut self.webp_config
+    }
+
     pub fn generate(&self, status: PowerStatus) -> Result<WebPMemory> {
-        encode_frames(self.generate_frames(status)?)
+        encode_frames(self.generate_frames(status)?, &self.webp_config)
     }
 
     pub async fn generate_async(&self, status: PowerStatus) -> Result<Vec<u8>> {
         let frames = self.generate_frames(status)?;
-        tokio::task::spawn_blocking(move || encode_frames(frames).map(|x| x.to_vec()))
+        let webp_config = self.webp_config;
+        tokio::task::spawn_blocking(move || encode_frames(frames, &webp_config).map(|x| x.to_vec()))
             .await
             .unwrap()
     }
@@ -493,9 +505,8 @@ impl GeneratorState {
     }
 }
 
-fn encode_frames(frames: FramesVec) -> Result<WebPMemory> {
-    let webp_config = WebPConfig::new().unwrap();
-    let mut encoder = AnimEncoder::new(WIDTH, HEIGHT, &webp_config);
+fn encode_frames(frames: FramesVec, webp_config: &WebPConfig) -> Result<WebPMemory> {
+    let mut encoder = AnimEncoder::new(WIDTH, HEIGHT, webp_config);
 
     let mut frame_number = 0;
     for (frame, duration_frames) in frames.iter() {

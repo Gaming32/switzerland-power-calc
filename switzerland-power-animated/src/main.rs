@@ -20,7 +20,7 @@ fn main() -> Result<()> {
     })?;
     drop(generator);
 
-    let mut file = File::create(Path::new("test.webp")).unwrap();
+    let mut file = File::create(Path::new("test_set_3.webp")).unwrap();
     file.write_all(&image).unwrap();
     Ok(())
 }
