@@ -2000,6 +2000,7 @@ dependencies = [
  "itertools",
  "phf",
  "phf_codegen",
+ "phf_shared",
  "sdl2",
  "serde_json",
  "smallvec",

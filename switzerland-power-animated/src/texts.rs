@@ -1,21 +1,35 @@
 use derive_more::with_trait::FromStr;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use strfmt::DisplayStr;
 
-const TEXTS_BY_LANGUAGE: phf::Map<&str, phf::Map<&str, &'static str>> =
+include!("../splat_lang.rs");
+
+impl AnimationLanguage {
+    pub fn name(&self) -> &'static str {
+        get_text(*self, "language_name")
+    }
+}
+
+impl Display for AnimationLanguage {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+const TEXTS_BY_LANGUAGE: phf::Map<AnimationLanguage, phf::Map<&str, &'static str>> =
     include!(concat!(env!("OUT_DIR"), "/splat_lang.rs"));
 
-pub fn get_text(lang: &str, key: &'static str) -> &'static str {
+pub fn get_text(lang: AnimationLanguage, key: &'static str) -> &'static str {
     TEXTS_BY_LANGUAGE
-        .get(lang)
-        .or_else(|| TEXTS_BY_LANGUAGE.get("USen"))
+        .get(&lang)
         .unwrap()
         .get(key)
         .copied()
         .unwrap_or(key)
 }
 
-pub fn format_power(lang: &str, key: &'static str, power: f64) -> String {
+pub fn format_power(lang: AnimationLanguage, key: &'static str, power: f64) -> String {
     let power = (power * 10.0).floor().abs() as u32;
     let integer = power / 10;
     let fraction = power % 10;
@@ -29,7 +43,7 @@ pub fn format_power(lang: &str, key: &'static str, power: f64) -> String {
     )
 }
 
-pub fn format_rank(lang: &str, rank: u32) -> String {
+pub fn format_rank(lang: AnimationLanguage, rank: u32) -> String {
     get_text_fmt(
         lang,
         "rank_value",
@@ -45,7 +59,7 @@ enum FmtKey {
 }
 
 fn get_text_fmt<const N: usize>(
-    lang: &str,
+    lang: AnimationLanguage,
     key: &'static str,
     values: [(FmtKey, &dyn DisplayStr); N],
 ) -> String {

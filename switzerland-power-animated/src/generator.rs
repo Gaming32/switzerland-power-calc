@@ -4,7 +4,7 @@ use crate::font::FontSet;
 use crate::layout::{BuiltPane, PaneContents};
 use crate::panes::{calc_rank_pane, power_progress_pane};
 use crate::status::SetScore;
-use crate::texts::{format_power, format_rank, get_text};
+use crate::texts::{AnimationLanguage, format_power, format_rank, get_text};
 use crate::{MatchOutcome, PowerStatus};
 use itertools::izip;
 use sdl2::Sdl;
@@ -24,7 +24,6 @@ pub const HEIGHT: u32 = 776;
 pub const SWITZERLAND_COLOR: Color = Color::RGB(218, 41, 28);
 
 const FPS: u32 = 60;
-const LANG: &str = "USen"; // TODO: Make configurable
 
 pub(crate) const PIXEL_FORMAT: PixelFormatEnum = PixelFormatEnum::ABGR8888;
 
@@ -92,28 +91,33 @@ impl AnimationGenerator {
         &mut self.webp_config
     }
 
-    pub fn generate(&self, status: PowerStatus) -> Result<WebPMemory> {
-        encode_frames(self.generate_frames(status)?, &self.webp_config)
+    pub fn generate(&self, status: PowerStatus, lang: AnimationLanguage) -> Result<WebPMemory> {
+        encode_frames(self.generate_frames(status, lang)?, &self.webp_config)
     }
 
-    pub async fn generate_async(&self, status: PowerStatus) -> Result<Vec<u8>> {
-        let frames = self.generate_frames(status)?;
+    pub async fn generate_async(
+        &self,
+        status: PowerStatus,
+        lang: AnimationLanguage,
+    ) -> Result<Vec<u8>> {
+        let frames = self.generate_frames(status, lang)?;
         let webp_config = self.webp_config;
         tokio::task::spawn_blocking(move || encode_frames(frames, &webp_config).map(|x| x.to_vec()))
             .await
             .unwrap()
     }
 
-    fn generate_frames(&self, status: PowerStatus) -> Result<FramesVec> {
+    fn generate_frames(&self, status: PowerStatus, lang: AnimationLanguage) -> Result<FramesVec> {
         match status {
             PowerStatus::Calculating { progress, total } => {
-                self.generate_calculating(progress, total, None, None)?
+                self.generate_calculating(lang, progress, total, None, None)?
             }
             PowerStatus::Calculated {
                 calculation_rounds,
                 power,
                 rank,
             } => self.generate_calculating(
+                lang,
                 calculation_rounds,
                 calculation_rounds,
                 Some(power),
@@ -126,7 +130,7 @@ impl AnimationGenerator {
                 old_rank,
                 new_rank,
             } => {
-                self.generate_set_played(matches, old_power, new_power, old_rank, new_rank)?;
+                self.generate_set_played(lang, matches, old_power, new_power, old_rank, new_rank)?;
             }
         }
 
@@ -135,6 +139,7 @@ impl AnimationGenerator {
 
     fn generate_calculating(
         &self,
+        lang: AnimationLanguage,
         progress: u32,
         total: u32,
         calculated_power: Option<f64>,
@@ -164,7 +169,7 @@ impl AnimationGenerator {
         progress_pane
             .immediate_child("calculating_text")
             .unwrap()
-            .set_text(get_text(LANG, "calculating"));
+            .set_text(get_text(lang, "calculating"));
         progress_pane.edit(|x| {
             x.set_scale(1.0);
             x.alpha = 255;
@@ -202,8 +207,8 @@ impl AnimationGenerator {
             result_pane
                 .immediate_child("calculated_text")
                 .unwrap()
-                .set_text(get_text(LANG, "calculated"));
-            power_value_text.set_text(format_power(LANG, "power_value", calculated_power));
+                .set_text(get_text(lang, "calculated"));
+            power_value_text.set_text(format_power(lang, "power_value", calculated_power));
             state.animate(&self.calc_rank_pane, RESULT_POWER_IN, 180)?;
         }
 
@@ -216,15 +221,15 @@ impl AnimationGenerator {
             rank_pane
                 .immediate_child("position_text")
                 .unwrap()
-                .set_text(get_text(LANG, "position"));
+                .set_text(get_text(lang, "position"));
             rank_pane
                 .immediate_child("estimate_text")
                 .unwrap()
-                .set_text(get_text(LANG, "estimate"));
+                .set_text(get_text(lang, "estimate"));
             inner_rank_pane
                 .immediate_child("rank_value_text")
                 .unwrap()
-                .set_text(format_rank(LANG, estimated_rank));
+                .set_text(format_rank(lang, estimated_rank));
 
             state.animate(&self.calc_rank_pane, WINDOW_IN, 6)?;
             state.animate(&self.calc_rank_pane, RESULT_RANK_IN, 120)?;
@@ -238,6 +243,7 @@ impl AnimationGenerator {
 
     fn generate_set_played(
         &self,
+        lang: AnimationLanguage,
         matches: [MatchOutcome; 5],
         old_power: f64,
         new_power: f64,
@@ -268,13 +274,13 @@ impl AnimationGenerator {
         let power_text = power_pane.immediate_child("power_text").unwrap();
         let power_value_text = power_pane.immediate_child("power_value_text").unwrap();
 
-        power_text.set_text(get_text(LANG, "power"));
-        power_value_text.set_text(format_power(LANG, "power_value", old_power));
+        power_text.set_text(get_text(lang, "power"));
+        power_value_text.set_text(format_power(lang, "power_value", old_power));
 
         state.animate(&self.power_progress_pane, WINDOW_IN, 1)?;
 
-        let win_text = get_text(LANG, "win");
-        let lose_text = get_text(LANG, "lose");
+        let win_text = get_text(lang, "win");
+        let lose_text = get_text(lang, "lose");
         for (outcome, base_pane, animation_pane, text_pane, pos) in izip!(
             matches.into_iter().filter(|x| *x != MatchOutcome::Unplayed),
             win_lose_panes.iter(),
@@ -304,7 +310,7 @@ impl AnimationGenerator {
         state.animate(&self.power_progress_pane, SET_SCORE_IN, 60)?;
 
         let power_change = format_power(
-            LANG,
+            lang,
             if new_power >= old_power {
                 "power_up"
             } else {
@@ -331,13 +337,13 @@ impl AnimationGenerator {
             old_power,
             new_power,
             |distance| distance.powf(0.1).max(distance / 180.0),
-            |power| format_power(LANG, "power_value", power),
+            |power| format_power(lang, "power_value", power),
             30,
         )?;
 
         state.animate(&self.power_progress_pane, WINDOW_OUT, 2)?;
 
-        self.generate_rank_change(&mut state, old_rank, new_rank)?;
+        self.generate_rank_change(lang, &mut state, old_rank, new_rank)?;
 
         state.push_frame(0);
         Ok(())
@@ -345,6 +351,7 @@ impl AnimationGenerator {
 
     fn generate_rank_change(
         &self,
+        lang: AnimationLanguage,
         state: &mut GeneratorState,
         old_rank: u32,
         new_rank: u32,
@@ -370,15 +377,15 @@ impl AnimationGenerator {
         rank_pane
             .immediate_child("position_text")
             .unwrap()
-            .set_text(get_text(LANG, "position"));
+            .set_text(get_text(lang, "position"));
         rank_pane
             .immediate_child("estimate_text")
             .unwrap()
-            .set_text(get_text(LANG, "estimate"));
+            .set_text(get_text(lang, "estimate"));
         inner_rank_pane
             .immediate_child("rank_value_text")
             .unwrap()
-            .set_text(format_rank(LANG, old_rank));
+            .set_text(format_rank(lang, old_rank));
 
         rank_arrow_root_inner.edit(|x| x.rect.set_x(if new_rank == old_rank { 20 } else { 0 }));
         let rank_arrow_name = match new_rank.cmp(&old_rank) {
@@ -402,7 +409,7 @@ impl AnimationGenerator {
             old_rank as f64,
             new_rank as f64,
             |distance| distance / 120.0,
-            |rank| format_rank(LANG, rank.round() as u32),
+            |rank| format_rank(lang, rank.round() as u32),
             120,
         )?;
 

@@ -11,3 +11,4 @@ mod texts;
 pub use error::{Error, Result};
 pub use generator::AnimationGenerator;
 pub use status::{MatchOutcome, PowerStatus};
+pub use texts::AnimationLanguage;

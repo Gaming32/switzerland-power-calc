@@ -1,7 +1,10 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::path::Path;
+use std::str::FromStr;
 use std::{env, fs};
+
+include!("splat_lang.rs");
 
 fn main() {
     println!("cargo::rerun-if-changed=splat_lang");
@@ -23,7 +26,7 @@ fn main() {
             .unwrap()
             .to_string();
         texts_by_language.entry(
-            lang_name.to_string(),
+            AnimationLanguage::from_str(&lang_name).unwrap(),
             phf_codegen::Map::new()
                 .entry(
                     "language_name",
