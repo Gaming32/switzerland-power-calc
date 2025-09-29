@@ -4,26 +4,27 @@ mod types;
 use crate::cli_helpers::{TrieHinter, print_seeding_instructions};
 use crate::db::{Database, SwitzerlandPlayer, SwitzerlandPlayerMap};
 use crate::sendou::schema::{
-    SendouId, TournamentContext, TournamentData, TournamentMatch, TournamentMatchOpponent,
-    TournamentMatchResult, TournamentMatchStatus, TournamentRoot, TournamentStageSettings,
-    TournamentTeam,
+    MatchRoot, SendouId, TournamentContext, TournamentData, TournamentMatch,
+    TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus, TournamentRoot,
+    TournamentStageSettings, TournamentTeam,
 };
 use crate::sendou::types::{
     DescendingRatingGlicko2, DiscordChannelsMap, GetTournamentFn, TeamsMap,
 };
 use crate::{
-    Error, Result, format_player_rank_summary, format_player_simply, format_rank_difference,
-    summarize_differences,
+    Error, Result, format_player_rank_summary, format_player_simply, summarize_differences,
 };
 use ansi_term::Color;
 use chrono::Utc;
 use itertools::Itertools;
-use reqwest::Url;
+use reqwest::{Client, Url};
 use rustyline::history::DefaultHistory;
 use rustyline::{DefaultEditor, Editor, ExternalPrinter};
+use serenity::FutureExt;
 use serenity::all::{
-    Channel, ChannelId, ChannelType, CreateChannel, CreateMessage, GuildChannel, Http, HttpBuilder,
-    Mentionable, PartialGuild, PermissionOverwrite, PermissionOverwriteType, Permissions,
+    Builder, Channel, ChannelId, ChannelType, CreateAttachment, CreateChannel, CreateMessage,
+    GuildChannel, Http, HttpBuilder, Mentionable, PartialGuild, PermissionOverwrite,
+    PermissionOverwriteType, Permissions,
 };
 use skillratings::Outcomes;
 use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2};
@@ -33,7 +34,11 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
+use switzerland_power_animated::{
+    AnimationLanguage, AsyncAnimationGenerator, MatchOutcome, PowerStatus,
+};
 use tokio::time::sleep;
 use trie_rs::Trie;
 use unic_emoji_char::{is_emoji, is_emoji_component};
@@ -58,9 +63,11 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         ))
         .build()?;
 
-    let http = HttpBuilder::new(env_str("DISCORD_BOT_TOKEN")?)
-        .client(client.clone())
-        .build();
+    let http = Arc::new(
+        HttpBuilder::new(env_str("DISCORD_BOT_TOKEN")?)
+            .client(client.clone())
+            .build(),
+    );
 
     let chat_category = match env::<ChannelId>("DISCORD_CHAT_CATEGORY_ID")?
         .to_channel(&http)
@@ -89,6 +96,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
             .get(tournament_url.clone())
             .send()
             .await?
+            .error_for_status()?
             .json::<TournamentRoot>()
             .await?
             .tournament)
@@ -104,6 +112,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         create_discord_channels(&http, &chat_guild, chat_category.id, &get_tournament).await?;
 
     run_tournament(
+        &client,
         &http,
         &old_players,
         &mut new_players,
@@ -307,7 +316,8 @@ async fn create_discord_channels(
 }
 
 async fn run_tournament(
-    http: &Http,
+    client: &Client,
+    http: &Arc<Http>,
     original_players: &SwitzerlandPlayerMap,
     players: &mut SwitzerlandPlayerMap,
     teams: &TeamsMap<'_>,
@@ -386,6 +396,8 @@ async fn run_tournament(
         .map(DescendingRatingGlicko2)
         .collect::<indexset::BTreeSet<_>>();
 
+    let animation_generator = AsyncAnimationGenerator::new().await?;
+
     let new_players = loop {
         let tournament = get_tournament().await?;
         let swiss_round_ids = {
@@ -435,11 +447,13 @@ async fn run_tournament(
                 let (team, player, rating) = get_player(&opponent);
                 let rank = old_ranks.get(player).copied();
                 send_progress_message_to_player(
+                    client,
                     http,
                     original_players,
                     discord_channels,
                     &tournament.context,
                     &tourney_match,
+                    &animation_generator,
                     team,
                     None,
                     calc_index,
@@ -450,8 +464,7 @@ async fn run_tournament(
                     rating,
                     rank,
                     rank.unwrap_or_default(),
-                )
-                .await?;
+                )?;
                 continue;
             }
             if tourney_match.status != TournamentMatchStatus::Completed {
@@ -498,11 +511,13 @@ async fn run_tournament(
                     format_player_simply(Some(&old_player), player, false)
                 )?;
                 send_progress_message_to_player(
+                    client,
                     http,
                     original_players,
                     discord_channels,
                     &tournament.context,
                     &tourney_match,
+                    &animation_generator,
                     team,
                     Some(other_team),
                     calc_index,
@@ -513,8 +528,7 @@ async fn run_tournament(
                     player.rating,
                     old_rank,
                     new_rank,
-                )
-                .await?;
+                )?;
                 Ok(())
             };
             update_player(tourney_match.opponent1, team1, team2, player1, new_rating1).await?;
@@ -546,12 +560,14 @@ async fn run_tournament(
 
 // Yeah, I'd rather it had fewer too, but I'm not too sure what to do about that
 #[allow(clippy::too_many_arguments)]
-async fn send_progress_message_to_player(
-    http: &Http,
+fn send_progress_message_to_player(
+    client: &Client,
+    http: &Arc<Http>,
     original_players: &SwitzerlandPlayerMap,
     discord_channels: &DiscordChannelsMap,
     tournament_context: &TournamentContext,
     tourney_match: &TournamentMatch,
+    animation_generator: &AsyncAnimationGenerator,
     team: &TournamentTeam,
     other_team: Option<&TournamentTeam>,
     calc_index: Option<usize>,
@@ -566,44 +582,102 @@ async fn send_progress_message_to_player(
     let Some(discord_channel) = discord_channels.get(&team.id) else {
         return Ok(());
     };
-    let message = if let Some(calc_index) = calc_index
+
+    let mut power_status = if let Some(calc_index) = calc_index
         && !original_players.contains_key(player_name)
     {
-        let mut message = format!("Calculating... {}/{}", calc_index + 1, swiss_round_count);
-        if calc_index + 1 == swiss_round_count {
-            let _ = write!(
-                message,
-                "\nCalculated: {:.1} SP\nEstimated rank: #{}",
-                new_rating.rating, new_rank,
-            );
+        if calc_index + 1 < swiss_round_count {
+            PowerStatus::Calculating {
+                progress: (calc_index + 1) as u32,
+                total: swiss_round_count as u32,
+            }
+        } else {
+            PowerStatus::Calculated {
+                calculation_rounds: swiss_round_count as u32,
+                power: new_rating.rating,
+                rank: new_rank,
+            }
         }
-        message
-    } else if let Some(other_team) = other_team {
+    } else if other_team.is_some() {
         // Don't show BYEs (after calcs)
+        PowerStatus::SetPlayed {
+            matches: Default::default(),
+            old_power: old_rating.rating,
+            new_power: new_rating.rating,
+            old_rank: old_rank.unwrap(),
+            new_rank,
+        }
+    } else {
+        return Ok(());
+    };
+
+    let message = other_team.map(|team| {
         format!(
-            "{} {}\nSwitzerland Power: {:.1} SP {:+.1} → {:.1} SP\nEstimated rank: {}",
+            "{} {}",
             match my_result.result.unwrap() {
                 TournamentMatchResult::Win => "VICTORY",
                 TournamentMatchResult::Loss => "DEFEAT",
             },
             format_link(
-                &format!("vs {}", other_team.members.first().unwrap().username),
+                &format!("vs {}", team.members.first().unwrap().username),
                 &format!(
                     "<https://sendou.ink/to/{}/matches/{}>",
                     tournament_context.id, tourney_match.id
                 ),
             ),
-            old_rating.rating,
-            new_rating.rating - old_rating.rating,
-            new_rating.rating,
-            format_rank_difference(old_rank.unwrap(), new_rank),
         )
-    } else {
-        return Ok(());
-    };
-    discord_channel
-        .send_message(http, CreateMessage::new().content(message))
-        .await?;
+    });
+
+    let client = client.clone();
+    let http = http.clone();
+    let channel_id = discord_channel.id;
+    let tourney_id = tournament_context.id;
+    let set_id = tourney_match.id;
+    let animation_generator = animation_generator.clone();
+    let my_team_id = team.id;
+    tokio::spawn(
+        async move {
+            if let PowerStatus::SetPlayed { matches, .. } = &mut power_status {
+                let match_results = client
+                    .get(format!(
+                        "https://sendou.ink/to/{tourney_id}/matches/{set_id}?_data"
+                    ))
+                    .send()
+                    .await?
+                    .error_for_status()?
+                    .json::<MatchRoot>()
+                    .await?
+                    .results;
+                for (i, result) in match_results.into_iter().enumerate() {
+                    matches[i] = if result.winner_team_id == my_team_id {
+                        MatchOutcome::Win
+                    } else {
+                        MatchOutcome::Lose
+                    };
+                }
+            }
+            let animation = animation_generator
+                .generate(
+                    power_status,
+                    AnimationLanguage::default(), // TODO: Make configurable
+                )
+                .await?;
+            CreateMessage::new()
+                .content(message.unwrap_or_default())
+                .add_file(CreateAttachment::bytes(
+                    animation,
+                    format!("set-{set_id}-{my_team_id}.webp"),
+                ))
+                .execute(http, (channel_id, None))
+                .await?;
+            Ok::<(), Error>(())
+        }
+        .then(async move |result| {
+            if let Err(err) = result {
+                println!("Failed to send results message for set {set_id}: {err}");
+            }
+        }),
+    );
     Ok(())
 }
 

@@ -1,10 +1,10 @@
-use crate::Result;
 use crate::animation::AnimationSet;
 use crate::font::FontSet;
 use crate::layout::{BuiltPane, PaneContents};
 use crate::panes::{calc_rank_pane, power_progress_pane};
 use crate::status::SetScore;
 use crate::texts::{AnimationLanguage, format_power, format_rank, get_text};
+use crate::{Error, Result};
 use crate::{MatchOutcome, PowerStatus};
 use itertools::izip;
 use sdl2::Sdl;
@@ -261,6 +261,11 @@ impl AnimationGenerator {
         use power_progress_pane::*;
 
         let (wins, losses) = matches.set_score();
+        if wins + losses < 2 {
+            return Err(Error::InvalidStatus(
+                "Fewer than 2 matches played".to_string(),
+            ));
+        }
 
         let mut state = self.state.borrow_mut();
 

@@ -2041,6 +2041,7 @@ dependencies = [
  "serenity",
  "skillratings",
  "strsim",
+ "switzerland-power-animated",
  "thiserror 2.0.12",
  "tokio",
  "totally-ordered",

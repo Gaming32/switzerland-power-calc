@@ -3,6 +3,7 @@ use crate::{AnimationGenerator, AnimationLanguage, PowerStatus, Result};
 use std::thread;
 use tokio::sync::oneshot;
 
+#[derive(Debug, Clone)]
 pub struct AsyncAnimationGenerator {
     generator_send: crossbeam_channel::Sender<GenerateCommand>,
     encoder_send: crossbeam_channel::Sender<EncodeCommand>,

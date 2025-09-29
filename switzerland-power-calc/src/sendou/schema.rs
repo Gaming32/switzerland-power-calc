@@ -127,3 +127,14 @@ pub struct TournamentTeamMember {
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub struct TournamentTeamCheckIn {}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct MatchRoot {
+    pub results: Vec<MatchResult>,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatchResult {
+    pub winner_team_id: SendouId,
+}

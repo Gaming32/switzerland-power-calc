@@ -18,8 +18,9 @@ pub enum PowerStatus {
     },
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Default)]
 pub enum MatchOutcome {
+    #[default]
     Unplayed,
     Win,
     Lose,

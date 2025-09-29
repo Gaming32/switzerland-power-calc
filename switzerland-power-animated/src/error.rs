@@ -10,6 +10,8 @@ pub enum Error {
     WebP(AnimEncodeError),
     #[error("Invalid CString: {0}")]
     CString(#[from] NulError),
+    #[error("Invalid status: {0}")]
+    InvalidStatus(String),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

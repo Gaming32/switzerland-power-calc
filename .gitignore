@@ -1,5 +1,5 @@
 /target
 .idea
-.env
+switzerland-power-calc/.env
 *.cbor
 *.webp

@@ -21,6 +21,8 @@ pub enum Error {
     Url(#[from] url::ParseError),
     #[error("Discord error: {0}")]
     Discord(#[source] Box<serenity::Error>),
+    #[error("Animation error: {0}")]
+    Animation(#[from] switzerland_power_animated::Error),
     #[error("{0}")]
     Custom(String),
 }

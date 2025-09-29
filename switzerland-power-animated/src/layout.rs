@@ -227,7 +227,7 @@ pub enum PaneContents {
     Null,
     Image(Rc<Surface<'static>>),
     Text(TextPaneContents),
-    Custom(&'static dyn Fn(&mut SurfaceCanvas, Rect) -> Result<()>),
+    Custom(fn(&mut SurfaceCanvas, Rect) -> Result<()>),
 }
 
 impl PaneContents {
