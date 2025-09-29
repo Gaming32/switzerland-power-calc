@@ -1,5 +1,4 @@
 use crate::Result;
-use crate::alignment::Alignment;
 use crate::animation::AnimationSet;
 use crate::font::FontSet;
 use crate::layout::{BuiltPane, PaneContents};
@@ -25,7 +24,7 @@ pub const HEIGHT: u32 = 776;
 pub const SWITZERLAND_COLOR: Color = Color::RGB(218, 41, 28);
 
 const FPS: u32 = 60;
-const LANG: &str = "JPja"; // TODO: Make configurable
+const LANG: &str = "USen"; // TODO: Make configurable
 
 pub(crate) const PIXEL_FORMAT: PixelFormatEnum = PixelFormatEnum::ABGR8888;
 
@@ -321,7 +320,6 @@ impl AnimationGenerator {
             new_power,
             |distance| distance.powf(0.1).max(distance / 180.0),
             |power| format_power(LANG, "power_value", power),
-            || Ok(()),
             30,
         )?;
 
@@ -393,14 +391,6 @@ impl AnimationGenerator {
             new_rank as f64,
             |distance| distance / 120.0,
             |rank| format_rank(LANG, rank.round() as u32),
-            || {
-                let mut new_rect = inner_rank_pane
-                    .immediate_child_content_bounds("rank_value_text", Alignment::CENTER)?
-                    .unwrap();
-                new_rect.set_width(new_rect.width().max(300) + 80);
-                rank_arrow_root.edit(|x| x.rect = new_rect);
-                Ok(())
-            },
             120,
         )?;
 
@@ -448,7 +438,6 @@ impl GeneratorState {
         new_value: f64,
         change_per_frame: impl FnOnce(f64) -> f64,
         formatter: impl Fn(f64) -> String,
-        each_frame: impl Fn() -> Result<()>,
         end_delay: u32,
     ) -> Result<()> {
         let distance = (new_value - old_value).abs();
@@ -456,7 +445,6 @@ impl GeneratorState {
 
         let mut render = |value, duration| {
             value_pane.set_text(formatter(value));
-            each_frame()?;
             self.render_frame(render_pane, duration)
         };
 

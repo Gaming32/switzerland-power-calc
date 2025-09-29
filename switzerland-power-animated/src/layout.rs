@@ -22,6 +22,7 @@ pub struct Pane {
     pub anchor: Alignment,
     pub parent_anchor: Alignment,
     pub contents: PaneContents,
+    pub extra_behavior: ExtraBehavior,
     pub children: Vec<BuiltPane>,
 }
 
@@ -48,6 +49,7 @@ impl Pane {
         parent_anchor: Alignment::CENTER,
         contents: PaneContents::Null,
         children: vec![],
+        extra_behavior: ExtraBehavior::None,
     };
 
     pub fn build(self) -> BuiltPane {
@@ -77,23 +79,57 @@ impl Pane {
         }
     }
 
-    fn draw_bounds_in_parent(&self, parent_width: u32, parent_height: u32) -> Result<Rect> {
-        self.contents.bounds_in_parent(self.compute_local_draw_rect(
-            Rect::new(0, 0, parent_width, parent_height),
-            1.0,
-            1.0,
-        ))
-    }
-
     fn render(
         &self,
         canvas: &mut SurfaceCanvas,
+        parent: Option<&Pane>,
         parent_rect: Rect,
         inherited_x_scale: f64,
         inherited_y_scale: f64,
     ) -> Result<()> {
-        let draw_rect =
-            self.compute_local_draw_rect(parent_rect, inherited_x_scale, inherited_y_scale);
+        let local_rect = match self.extra_behavior {
+            ExtraBehavior::AdjustToContentBounds {
+                sibling,
+                min_width,
+                margin,
+            } => {
+                if let Some(parent) = parent
+                    && let Some(sibling) = parent.children.iter().find(|x| x.name() == sibling)
+                {
+                    let (parent_width, parent_height) = parent.rect.size();
+                    let sibling = sibling.pane();
+                    let mut rect =
+                        sibling
+                            .contents
+                            .bounds_in_parent(sibling.compute_local_draw_rect(
+                                Rect::new(0, 0, parent_width, parent_height),
+                                sibling.rect,
+                                1.0,
+                                1.0,
+                            ))?;
+                    rect.set_x(
+                        rect.x()
+                            + self.parent_anchor.horizontal.align(parent_width as i32)
+                            + self.parent_anchor.horizontal.align(rect.width() as i32),
+                    );
+                    rect.set_y(
+                        -rect.y() + self.parent_anchor.vertical.align(parent_height as i32)
+                            - self.parent_anchor.vertical.align(rect.height() as i32),
+                    );
+                    rect.set_width(rect.width().max(min_width) + margin);
+                    rect
+                } else {
+                    self.rect
+                }
+            }
+            _ => self.rect,
+        };
+        let draw_rect = self.compute_local_draw_rect(
+            parent_rect,
+            local_rect,
+            inherited_x_scale,
+            inherited_y_scale,
+        );
         let accumulated_x_scale = inherited_x_scale * self.scale.0;
         let accumulated_y_scale = inherited_y_scale * self.scale.1;
 
@@ -127,6 +163,7 @@ impl Pane {
     fn compute_local_draw_rect(
         &self,
         parent_rect: Rect,
+        local_rect: Rect,
         inherited_x_scale: f64,
         inherited_y_scale: f64,
     ) -> Rect {
@@ -143,13 +180,13 @@ impl Pane {
 
         let accumulated_x_scale = inherited_x_scale * self.scale.0;
         let accumulated_y_scale = inherited_y_scale * self.scale.1;
-        let width = (self.rect.width() as f64 * accumulated_x_scale) as u32;
-        let height = (self.rect.height() as f64 * accumulated_y_scale) as u32;
+        let width = (local_rect.width() as f64 * accumulated_x_scale) as u32;
+        let height = (local_rect.height() as f64 * accumulated_y_scale) as u32;
         Rect::new(
-            origin_x + (self.rect.x as f64 * inherited_x_scale) as i32
+            origin_x + (local_rect.x as f64 * inherited_x_scale) as i32
                 - self.anchor.horizontal.align(width as i32),
             origin_y
-                - (self.rect.y as f64 * inherited_y_scale) as i32
+                - (local_rect.y as f64 * inherited_y_scale) as i32
                 - self.anchor.vertical.align(height as i32),
             width,
             height,
@@ -170,9 +207,13 @@ impl Pane {
             .render(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?;
 
         for child in &self.children {
-            child
-                .pane()
-                .render(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?;
+            child.pane().render(
+                canvas,
+                Some(self),
+                draw_rect,
+                accumulated_x_scale,
+                accumulated_y_scale,
+            )?;
         }
 
         canvas.set_scale(old_scale.0, old_scale.1)?;
@@ -324,6 +365,16 @@ impl TextPaneContents {
 }
 
 #[derive(Clone)]
+pub enum ExtraBehavior {
+    None,
+    AdjustToContentBounds {
+        sibling: &'static str,
+        min_width: u32,
+        margin: u32,
+    },
+}
+
+#[derive(Clone)]
 pub struct BuiltPane(&'static str, Rc<RefCell<Pane>>);
 
 impl BuiltPane {
@@ -358,7 +409,7 @@ impl BuiltPane {
     pub fn render(&self, canvas: &mut SurfaceCanvas) -> Result<()> {
         let rect = canvas.surface().rect();
         let pane = self.pane();
-        pane.render(canvas, rect, pane.scale.0, pane.scale.1)
+        pane.render(canvas, None, rect, pane.scale.0, pane.scale.1)
     }
 
     pub fn immediate_child(&self, name: &str) -> Option<BuiltPane> {
@@ -367,28 +418,6 @@ impl BuiltPane {
             .iter()
             .find(|x| x.name() == name)
             .cloned()
-    }
-
-    pub fn immediate_child_content_bounds(
-        &self,
-        name: &str,
-        for_parent_anchor: Alignment,
-    ) -> Result<Option<Rect>> {
-        let Some(child) = self.immediate_child(name) else {
-            return Ok(None);
-        };
-        let (my_width, my_height) = self.pane().rect.size();
-        let mut result = child.pane().draw_bounds_in_parent(my_width, my_height)?;
-        result.set_x(
-            result.x()
-                + for_parent_anchor.horizontal.align(my_width as i32)
-                + for_parent_anchor.horizontal.align(result.width() as i32),
-        );
-        result.set_y(
-            -result.y() + for_parent_anchor.vertical.align(my_height as i32)
-                - for_parent_anchor.vertical.align(result.height() as i32),
-        );
-        Ok(Some(result))
     }
 
     pub fn child(&self, path: &[&str]) -> Option<BuiltPane> {

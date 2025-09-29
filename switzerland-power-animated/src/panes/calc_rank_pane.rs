@@ -4,7 +4,7 @@ use crate::animation::AnimatableParameter::{Alpha, Scale};
 use crate::animation::{AnimationSet, AnimationSetElement, AnimationTrack, Keyframe};
 use crate::font::FontSet;
 use crate::generator::{HEIGHT, SWITZERLAND_COLOR, WIDTH};
-use crate::layout::{BuiltPane, Pane, PaneContents, TextPaneContents};
+use crate::layout::{BuiltPane, ExtraBehavior, Pane, PaneContents, TextPaneContents};
 use sdl2::gfx::primitives::DrawRenderer;
 use sdl2::rect::Rect;
 use std::rc::Rc;
@@ -189,6 +189,11 @@ fn rank_arrows() -> Result<BuiltPane> {
     Ok(Pane {
         name: "rank_arrow_root",
         rect: Rect::new(0, 8, 400, 128),
+        extra_behavior: ExtraBehavior::AdjustToContentBounds {
+            sibling: "rank_value_text",
+            min_width: 300,
+            margin: 80,
+        },
         children: vec![
             Pane {
                 name: "inner",
