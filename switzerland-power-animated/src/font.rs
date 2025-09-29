@@ -29,40 +29,20 @@ impl<'ttf> FontSet<'ttf> {
         })
     }
 
-    pub fn render<'a>(&self, color: impl Into<Color>, text: &str) -> Result<Surface<'a>> {
-        if text.is_empty() {
-            return Ok(Surface::new(0, 0, PIXEL_FORMAT)?);
-        }
+    pub fn size_of(&self, text: &str) -> Result<(u32, u32)> {
+        Ok(match self.split_text(text)? {
+            SplitTextResult::EmptyText => (0, 0),
+            SplitTextResult::SingleFont(font) => font.size_of(text)?,
+            SplitTextResult::MultipleFonts(_, size) => size,
+        })
+    }
 
-        let result = match text
-            .char_indices()
-            .chunk_by(|(_, ch)| {
-                self.fonts
-                    .iter()
-                    .position(|x| x.find_glyph(*ch).is_some())
-                    .unwrap_or_default()
-            })
-            .into_iter()
-            .map(|(font_index, mut indices)| {
-                let (start_index, start_ch) = indices.next().unwrap();
-                let end_index = indices.last().map_or_else(
-                    || start_index + start_ch.len_utf8(),
-                    |(x, ch)| x + ch.len_utf8(),
-                );
-                (&self.fonts[font_index], &text[start_index..end_index])
-            })
-            .exactly_one()
-        {
-            Ok((font, _)) => font.render(text).blended(color)?,
-            Err(segments) => {
+    pub fn render<'a>(&self, color: impl Into<Color>, text: &str) -> Result<Surface<'a>> {
+        Ok(match self.split_text(text)? {
+            SplitTextResult::EmptyText => Surface::new(0, 0, PIXEL_FORMAT)?,
+            SplitTextResult::SingleFont(font) => font.render(text).blended(color)?,
+            SplitTextResult::MultipleFonts(segments, (width, height)) => {
                 let color = color.into();
-                let segments = segments.collect::<SmallVec<[_; 4]>>();
-                let (width, height) = segments
-                    .iter()
-                    .map(|(font, segment)| font.size_of(segment))
-                    .fold_ok((0, 0), |(old_w, old_h), (new_w, new_h)| {
-                        (old_w + new_w, old_h.max(new_h))
-                    })?;
                 let max_ascent = segments
                     .iter()
                     .map(|(font, _)| font.ascent())
@@ -87,7 +67,58 @@ impl<'ttf> FontSet<'ttf> {
                 }
                 result
             }
-        };
-        Ok(result)
+        })
     }
+
+    fn split_text<'font, 'str>(
+        &'font self,
+        text: &'str str,
+    ) -> Result<SplitTextResult<'font, 'str, 'ttf>> {
+        if text.is_empty() {
+            return Ok(SplitTextResult::EmptyText);
+        }
+
+        Ok(
+            match text
+                .char_indices()
+                .chunk_by(|(_, ch)| {
+                    self.fonts
+                        .iter()
+                        .position(|x| x.find_glyph(*ch).is_some())
+                        .unwrap_or_default()
+                })
+                .into_iter()
+                .map(|(font_index, mut indices)| {
+                    let (start_index, start_ch) = indices.next().unwrap();
+                    let end_index = indices.last().map_or_else(
+                        || start_index + start_ch.len_utf8(),
+                        |(x, ch)| x + ch.len_utf8(),
+                    );
+                    (&self.fonts[font_index], &text[start_index..end_index])
+                })
+                .exactly_one()
+            {
+                Ok((font, _)) => SplitTextResult::SingleFont(font),
+                Err(segments) => {
+                    let segments = segments.collect::<SmallVec<[_; 4]>>();
+                    let size = segments
+                        .iter()
+                        .map(|(font, segment)| font.size_of(segment))
+                        .fold_ok((0, 0), |(old_w, old_h), (new_w, new_h)| {
+                            (old_w + new_w, old_h.max(new_h))
+                        })?;
+                    SplitTextResult::MultipleFonts(segments, size)
+                }
+            },
+        )
+    }
+}
+
+enum SplitTextResult<'font, 'str, 'ttf> {
+    EmptyText,
+    SingleFont(&'font Font<'ttf, 'static>),
+    MultipleFonts(
+        SmallVec<[(&'font Font<'ttf, 'static>, &'str str); 4]>,
+        (u32, u32),
+    ),
 }

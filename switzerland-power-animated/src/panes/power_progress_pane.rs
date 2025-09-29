@@ -4,7 +4,7 @@ use crate::animation::AnimatableParameter::{Alpha, Scale, ScaleX, ScaleY, Transl
 use crate::animation::{AnimationSet, AnimationSetElement, AnimationTrack, Keyframe};
 use crate::font::FontSet;
 use crate::generator::{HEIGHT, WIDTH};
-use crate::layout::{BuiltPane, Pane, PaneContents};
+use crate::layout::{BuiltPane, Pane, PaneContents, TextPaneContents};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use std::rc::Rc;
@@ -46,13 +46,11 @@ pub fn power_progress_pane(
                         scale: (1.0, 0.5),
                         alpha: 0,
                         anchor: Alignment::BOTTOM,
-                        contents: PaneContents::Text {
-                            text: "3 - 2".into(),
-                            font: bold_font.clone(),
-                            color: Color::WHITE,
-                            scale: (0.7, 0.7),
-                            text_alignment: Alignment::BOTTOM,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("3 - 2", &bold_font)
+                                .scale(0.7, 0.7)
+                                .alignment(Alignment::BOTTOM),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),
@@ -73,26 +71,21 @@ pub fn power_progress_pane(
                         name: "power_text",
                         rect: Rect::new(-425, 97, 600, 76),
                         anchor: Alignment::LEFT,
-                        contents: PaneContents::Text {
-                            text: "Power".into(),
-                            font: bold_font.clone(),
-                            color: Color::WHITE,
-                            scale: (0.5, 0.5),
-                            text_alignment: Alignment::LEFT,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("Power", &bold_font)
+                                .scale(0.5, 0.5)
+                                .secondary_scale(0.8)
+                                .alignment(Alignment::LEFT),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),
                     Pane {
                         name: "power_value_text",
                         rect: Rect::new(0, -22, 700, 150),
-                        contents: PaneContents::Text {
-                            text: "1500.0".into(),
-                            font: bold_font.clone(),
-                            color: Color::WHITE,
-                            scale: (1.0, 1.0),
-                            text_alignment: Alignment::CENTER,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("1500.0", &bold_font).secondary_scale(0.8),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),
@@ -122,13 +115,10 @@ pub fn power_progress_pane(
                                 name: "value",
                                 rect: Rect::new(0, 10, 105, 40),
                                 scale: (0.6, 0.6),
-                                contents: PaneContents::Text {
-                                    text: "+100.0".into(),
-                                    font: bold_font_small.clone(),
-                                    color: Color::WHITE,
-                                    scale: (0.7, 0.7),
-                                    text_alignment: Alignment::CENTER,
-                                },
+                                contents: PaneContents::Text(
+                                    TextPaneContents::new("+100.0", &bold_font_small)
+                                        .scale(0.7, 0.7),
+                                ),
                                 ..Pane::EMPTY
                             }
                             .build(),
@@ -140,13 +130,11 @@ pub fn power_progress_pane(
                         name: "point_diff_anim",
                         rect: Rect::new(311, 76, 200, 76),
                         alpha: 0,
-                        contents: PaneContents::Text {
-                            text: "+100.0".into(),
-                            font: bold_font.clone(),
-                            color: Color::WHITE,
-                            scale: (0.5, 0.5),
-                            text_alignment: Alignment::CENTER,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("+100.0", &bold_font)
+                                .scale(0.5, 0.5)
+                                .secondary_scale(0.8),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),
@@ -185,13 +173,11 @@ fn win_lose_pane(
                     Pane {
                         name: "text",
                         rect: Rect::new(0, 0, 166, 46),
-                        contents: PaneContents::Text {
-                            text: "WIN".into(),
-                            font: font.clone(),
-                            color: WIN_COLOR,
-                            scale: (0.9, 0.9),
-                            text_alignment: Alignment::CENTER,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("WIN", font)
+                                .color(WIN_COLOR)
+                                .scale(0.9, 0.9),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),

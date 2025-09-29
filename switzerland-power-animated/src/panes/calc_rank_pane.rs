@@ -3,10 +3,9 @@ use crate::alignment::Alignment;
 use crate::animation::AnimatableParameter::{Alpha, Scale};
 use crate::animation::{AnimationSet, AnimationSetElement, AnimationTrack, Keyframe};
 use crate::font::FontSet;
-use crate::generator::{HEIGHT, WIDTH};
-use crate::layout::{BuiltPane, Pane, PaneContents};
+use crate::generator::{HEIGHT, SWITZERLAND_COLOR, WIDTH};
+use crate::layout::{BuiltPane, Pane, PaneContents, TextPaneContents};
 use sdl2::gfx::primitives::DrawRenderer;
-use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use std::rc::Rc;
 
@@ -55,26 +54,18 @@ pub fn calc_rank_pane(
                     Pane {
                         name: "calculating_text",
                         rect: Rect::new(0, 90, 850, 147),
-                        contents: PaneContents::Text {
-                            text: "Calculating".into(),
-                            font: bold_font.clone(),
-                            color: Color::WHITE,
-                            scale: (0.6, 0.59),
-                            text_alignment: Alignment::CENTER,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("Calculating", &bold_font).scale(0.6, 0.59),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),
                     Pane {
                         name: "progress_text",
                         rect: Rect::new(-54, -108, 200, 206),
-                        contents: PaneContents::Text {
-                            text: "3".into(),
-                            font: bold_font.clone(),
-                            color: Color::WHITE,
-                            scale: (1.2, 1.19),
-                            text_alignment: Alignment::CENTER,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("3", &bold_font).scale(1.2, 1.19),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),
@@ -82,13 +73,11 @@ pub fn calc_rank_pane(
                         name: "total_text",
                         rect: Rect::new(2, -126, 200, 150),
                         anchor: Alignment::LEFT,
-                        contents: PaneContents::Text {
-                            text: "5".into(),
-                            font: bold_font.clone(),
-                            color: Color::WHITE,
-                            scale: (0.8, 0.8),
-                            text_alignment: Alignment::LEFT,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("5", &bold_font)
+                                .scale(0.8, 0.8)
+                                .alignment(Alignment::LEFT),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),
@@ -103,26 +92,20 @@ pub fn calc_rank_pane(
                     Pane {
                         name: "calculated_text",
                         rect: Rect::new(0, 90, 850, 147),
-                        contents: PaneContents::Text {
-                            text: "Calculated".into(),
-                            font: bold_font.clone(),
-                            color: crate::generator::SWITZERLAND_COLOR,
-                            scale: (0.6, 0.59),
-                            text_alignment: Alignment::CENTER,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("Calculated", &bold_font)
+                                .color(SWITZERLAND_COLOR)
+                                .scale(0.6, 0.59),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),
                     Pane {
                         name: "power_value_text",
                         rect: Rect::new(5, -106, 800, 294),
-                        contents: PaneContents::Text {
-                            text: "1500.0".into(),
-                            font: bold_font.clone(),
-                            color: Color::WHITE,
-                            scale: (1.2, 1.19),
-                            text_alignment: Alignment::CENTER,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("1500.0", &bold_font).scale(1.2, 1.19),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),
@@ -138,13 +121,12 @@ pub fn calc_rank_pane(
                     Pane {
                         name: "position_text",
                         rect: Rect::new(0, 180, 600, 105),
-                        contents: PaneContents::Text {
-                            text: "Position".into(),
-                            font: bold_font.clone(),
-                            color: crate::generator::SWITZERLAND_COLOR,
-                            scale: (0.6, 0.59),
-                            text_alignment: Alignment::CENTER,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("Position", &bold_font)
+                                .color(SWITZERLAND_COLOR)
+                                .scale(0.6, 0.59)
+                                .secondary_scale(0.8),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),
@@ -152,13 +134,12 @@ pub fn calc_rank_pane(
                         name: "estimate_text",
                         rect: Rect::new(-170, 47, 300, 93),
                         parent_anchor: Alignment::LEFT,
-                        contents: PaneContents::Text {
-                            text: "Estimate".into(),
-                            font: bold_font.clone(),
-                            color: Color::RGB(0x80, 0x80, 0x80),
-                            scale: (0.6, 0.59),
-                            text_alignment: Alignment::CENTER,
-                        },
+                        contents: PaneContents::Text(
+                            TextPaneContents::new("Estimate", &bold_font)
+                                .color((0x80, 0x80, 0x80))
+                                .scale(0.6, 0.59)
+                                .secondary_scale(0.8),
+                        ),
                         ..Pane::EMPTY
                     }
                     .build(),
@@ -170,14 +151,11 @@ pub fn calc_rank_pane(
                             Pane {
                                 name: "rank_value_text",
                                 rect: Rect::new(0, 8, 680, 180),
-                                parent_anchor: Alignment::LEFT,
-                                contents: PaneContents::Text {
-                                    text: "#25".into(),
-                                    font: bold_font.clone(),
-                                    color: Color::WHITE,
-                                    scale: (1.2, 1.19),
-                                    text_alignment: Alignment::CENTER,
-                                },
+                                contents: PaneContents::Text(
+                                    TextPaneContents::new("#25", &bold_font)
+                                        .scale(1.2, 1.19)
+                                        .secondary_scale(0.8),
+                                ),
                                 ..Pane::EMPTY
                             }
                             .build(),
@@ -200,7 +178,7 @@ fn rank_arrows() -> Result<BuiltPane> {
     fn arrow(name: &'static str, bytes: &'static [u8]) -> Result<BuiltPane> {
         Ok(Pane {
             name,
-            rect: Rect::new(15, -5, 165, 165),
+            rect: Rect::new(0, 0, 165, 165),
             alpha: 0,
             contents: PaneContents::image_png(bytes)?,
             ..Pane::EMPTY
@@ -213,18 +191,27 @@ fn rank_arrows() -> Result<BuiltPane> {
         rect: Rect::new(0, 8, 400, 128),
         children: vec![
             Pane {
+                name: "inner",
                 rect: Rect::new(0, -4, 45, 60),
                 parent_anchor: Alignment::RIGHT,
                 children: vec![
-                    arrow(
-                        "rank_stay_arrow",
-                        include_bytes!("images/rank-stay-arrow.png"),
-                    )?,
-                    arrow("rank_up_arrow", include_bytes!("images/rank-up-arrow.png"))?,
-                    arrow(
-                        "rank_down_arrow",
-                        include_bytes!("images/rank-down-arrow.png"),
-                    )?,
+                    Pane {
+                        name: "inner_inner",
+                        rect: Rect::new(20, 0, 165, 165),
+                        children: vec![
+                            arrow(
+                                "rank_stay_arrow",
+                                include_bytes!("images/rank-stay-arrow.png"),
+                            )?,
+                            arrow("rank_up_arrow", include_bytes!("images/rank-up-arrow.png"))?,
+                            arrow(
+                                "rank_down_arrow",
+                                include_bytes!("images/rank-down-arrow.png"),
+                            )?,
+                        ],
+                        ..Pane::EMPTY
+                    }
+                    .build(),
                 ],
                 ..Pane::EMPTY
             }

@@ -67,47 +67,35 @@ impl Pane {
         new_text: impl Into<Cow<'static, str>>,
         new_color: impl Into<Option<Color>>,
     ) {
-        if let PaneContents::Text { text, color, .. } = &mut self.contents {
-            *text = new_text.into();
+        if let PaneContents::Text(text) = &mut self.contents {
+            text.text = new_text.into();
             if let Some(new_color) = new_color.into() {
-                *color = new_color;
+                text.color = new_color;
             }
         } else {
             panic!("Pane::set_text_and_color called on a non-Text Pane!");
         }
     }
 
+    fn draw_bounds_in_parent(&self, parent_width: u32, parent_height: u32) -> Result<Rect> {
+        self.contents.bounds_in_parent(self.compute_local_draw_rect(
+            Rect::new(0, 0, parent_width, parent_height),
+            1.0,
+            1.0,
+        ))
+    }
+
     fn render(
         &self,
         canvas: &mut SurfaceCanvas,
         parent_rect: Rect,
-        parent_x_scale: f64,
-        parent_y_scale: f64,
+        inherited_x_scale: f64,
+        inherited_y_scale: f64,
     ) -> Result<()> {
-        let origin_x = parent_rect.x()
-            + self
-                .parent_anchor
-                .horizontal
-                .align(parent_rect.width() as i32);
-        let origin_y = parent_rect.y()
-            + self
-                .parent_anchor
-                .vertical
-                .align(parent_rect.height() as i32);
-
-        let accumulated_x_scale = parent_x_scale * self.scale.0;
-        let accumulated_y_scale = parent_y_scale * self.scale.1;
-        let width = (self.rect.width() as f64 * accumulated_x_scale) as u32;
-        let height = (self.rect.height() as f64 * accumulated_y_scale) as u32;
-        let draw_rect = Rect::new(
-            origin_x + (self.rect.x as f64 * parent_x_scale) as i32
-                - self.anchor.horizontal.align(width as i32),
-            origin_y
-                - (self.rect.y as f64 * parent_y_scale) as i32
-                - self.anchor.vertical.align(height as i32),
-            width,
-            height,
-        );
+        let draw_rect =
+            self.compute_local_draw_rect(parent_rect, inherited_x_scale, inherited_y_scale);
+        let accumulated_x_scale = inherited_x_scale * self.scale.0;
+        let accumulated_y_scale = inherited_y_scale * self.scale.1;
 
         match self.alpha {
             0 => {}
@@ -134,6 +122,38 @@ impl Pane {
             }
         }
         Ok(())
+    }
+
+    fn compute_local_draw_rect(
+        &self,
+        parent_rect: Rect,
+        inherited_x_scale: f64,
+        inherited_y_scale: f64,
+    ) -> Rect {
+        let origin_x = parent_rect.x()
+            + self
+                .parent_anchor
+                .horizontal
+                .align(parent_rect.width() as i32);
+        let origin_y = parent_rect.y()
+            + self
+                .parent_anchor
+                .vertical
+                .align(parent_rect.height() as i32);
+
+        let accumulated_x_scale = inherited_x_scale * self.scale.0;
+        let accumulated_y_scale = inherited_y_scale * self.scale.1;
+        let width = (self.rect.width() as f64 * accumulated_x_scale) as u32;
+        let height = (self.rect.height() as f64 * accumulated_y_scale) as u32;
+        Rect::new(
+            origin_x + (self.rect.x as f64 * inherited_x_scale) as i32
+                - self.anchor.horizontal.align(width as i32),
+            origin_y
+                - (self.rect.y as f64 * inherited_y_scale) as i32
+                - self.anchor.vertical.align(height as i32),
+            width,
+            height,
+        )
     }
 
     fn render_internal(
@@ -165,19 +185,30 @@ pub enum PaneContents {
     #[default]
     Null,
     Image(Rc<Surface<'static>>),
-    Text {
-        text: Cow<'static, str>,
-        font: Rc<FontSet<'static>>,
-        color: Color,
-        scale: (f64, f64),
-        text_alignment: Alignment,
-    },
+    Text(TextPaneContents),
     Custom(&'static dyn Fn(&mut SurfaceCanvas, Rect) -> Result<()>),
 }
 
 impl PaneContents {
     pub fn image_png(bytes: &[u8]) -> Result<Self> {
         Ok(Self::Image(Rc::new(RWops::from_bytes(bytes)?.load_png()?)))
+    }
+
+    fn bounds_in_parent(&self, viewport: Rect) -> Result<Rect> {
+        Ok(match self {
+            PaneContents::Null => Rect::new(
+                viewport.x() + (viewport.width() / 2) as i32,
+                viewport.y() + (viewport.height() / 2) as i32,
+                1,
+                1,
+            ),
+            PaneContents::Image(_) => viewport,
+            PaneContents::Text(contents) => {
+                let (text_width, text_height) = contents.font.size_of(&contents.text)?;
+                contents.compute_rect(text_width, text_height, viewport, 1.0, 1.0)
+            }
+            PaneContents::Custom(_) => viewport,
+        })
     }
 
     fn render(
@@ -192,32 +223,14 @@ impl PaneContents {
             PaneContents::Image(image) => {
                 image.blit_scaled(None, canvas.surface_mut(), viewport)?;
             }
-            PaneContents::Text {
-                scale: (text_x_scale, text_y_scale),
-                text_alignment,
-                font,
-                color,
-                text,
-            } => {
-                let text_surface = font.render(*color, text)?;
-
-                let x_scale = text_x_scale * x_scale;
-                let y_scale = text_y_scale * y_scale;
-
-                let text_rel_x = text_alignment.horizontal.align(viewport.width() as i32)
-                    - text_alignment
-                        .horizontal
-                        .align((text_surface.width() as f64 * x_scale) as i32);
-                let text_rel_y = text_alignment.vertical.align(viewport.height() as i32)
-                    - text_alignment
-                        .vertical
-                        .align((text_surface.height() as f64 * y_scale) as i32);
-
-                let rect = Rect::new(
-                    viewport.x() + text_rel_x,
-                    viewport.y() + text_rel_y,
-                    (text_surface.width() as f64 * x_scale) as u32,
-                    (text_surface.height() as f64 * y_scale) as u32,
+            PaneContents::Text(contents) => {
+                let text_surface = contents.font.render(contents.color, &contents.text)?;
+                let rect = contents.compute_rect(
+                    text_surface.width(),
+                    text_surface.height(),
+                    viewport,
+                    x_scale,
+                    y_scale,
                 );
                 text_surface.blit_scaled(None, canvas.surface_mut(), rect)?;
             }
@@ -234,6 +247,79 @@ impl PaneContents {
             }
         }
         Ok(())
+    }
+}
+
+#[derive(Clone)]
+pub struct TextPaneContents {
+    pub text: Cow<'static, str>,
+    pub font: Rc<FontSet<'static>>,
+    pub color: Color,
+    pub scale: (f64, f64),
+    pub secondary_scale: f64,
+    pub alignment: Alignment,
+}
+
+impl TextPaneContents {
+    pub fn new(text: impl Into<Cow<'static, str>>, font: &Rc<FontSet<'static>>) -> Self {
+        Self {
+            text: text.into(),
+            font: font.clone(),
+            color: Color::WHITE,
+            scale: (1.0, 1.0),
+            secondary_scale: 1.0,
+            alignment: Alignment::CENTER,
+        }
+    }
+
+    pub fn color(mut self, color: impl Into<Color>) -> Self {
+        self.color = color.into();
+        self
+    }
+
+    pub fn scale(mut self, width: f64, height: f64) -> Self {
+        self.scale = (width, height);
+        self
+    }
+
+    pub fn secondary_scale(mut self, scale: f64) -> Self {
+        self.secondary_scale = scale;
+        self
+    }
+
+    pub fn alignment(mut self, alignment: Alignment) -> Self {
+        self.alignment = alignment;
+        self
+    }
+
+    fn compute_rect(
+        &self,
+        text_width: u32,
+        text_height: u32,
+        viewport: Rect,
+        parent_x_scale: f64,
+        parent_y_scale: f64,
+    ) -> Rect {
+        let x_scale = self.scale.0 / self.secondary_scale * parent_x_scale;
+        let y_scale = self.scale.1 / self.secondary_scale * parent_y_scale;
+
+        let text_rel_x = self.alignment.horizontal.align(viewport.width() as i32)
+            - self
+                .alignment
+                .horizontal
+                .align((text_width as f64 * x_scale) as i32);
+        let text_rel_y = self.alignment.vertical.align(viewport.height() as i32)
+            - self
+                .alignment
+                .vertical
+                .align((text_height as f64 * y_scale) as i32);
+
+        Rect::new(
+            viewport.x() + text_rel_x,
+            viewport.y() + text_rel_y,
+            (text_width as f64 * x_scale) as u32,
+            (text_height as f64 * y_scale) as u32,
+        )
     }
 }
 
@@ -265,21 +351,50 @@ impl BuiltPane {
         self.edit(|x| x.set_text_and_color(new_text, new_color))
     }
 
+    pub fn set_alpha(&self, alpha: u8) {
+        self.edit(|x| x.alpha = alpha);
+    }
+
     pub fn render(&self, canvas: &mut SurfaceCanvas) -> Result<()> {
         let rect = canvas.surface().rect();
         let pane = self.pane();
         pane.render(canvas, rect, pane.scale.0, pane.scale.1)
     }
 
+    pub fn immediate_child(&self, name: &str) -> Option<BuiltPane> {
+        self.pane()
+            .children
+            .iter()
+            .find(|x| x.name() == name)
+            .cloned()
+    }
+
+    pub fn immediate_child_content_bounds(
+        &self,
+        name: &str,
+        for_parent_anchor: Alignment,
+    ) -> Result<Option<Rect>> {
+        let Some(child) = self.immediate_child(name) else {
+            return Ok(None);
+        };
+        let (my_width, my_height) = self.pane().rect.size();
+        let mut result = child.pane().draw_bounds_in_parent(my_width, my_height)?;
+        result.set_x(
+            result.x()
+                + for_parent_anchor.horizontal.align(my_width as i32)
+                + for_parent_anchor.horizontal.align(result.width() as i32),
+        );
+        result.set_y(
+            -result.y() + for_parent_anchor.vertical.align(my_height as i32)
+                - for_parent_anchor.vertical.align(result.height() as i32),
+        );
+        Ok(Some(result))
+    }
+
     pub fn child(&self, path: &[&str]) -> Option<BuiltPane> {
         match *path {
             [] => Some(self.clone()),
-            [name] => self
-                .pane()
-                .children
-                .iter()
-                .find(|x| x.name() == name)
-                .cloned(),
+            [name] => self.immediate_child(name),
             [name, ..] => self
                 .pane()
                 .children
