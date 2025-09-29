@@ -156,60 +156,34 @@ impl AnimationGenerator {
         use calc_rank_pane::*;
 
         let mut state = self.state.borrow_mut();
+        let calc_rank_pane = self.calc_rank_pane.deep_clone();
 
-        let progress_pane = self
-            .calc_rank_pane
-            .immediate_child("progress_pane")
-            .unwrap();
+        let progress_pane = calc_rank_pane.immediate_child("progress_pane").unwrap();
         let progress_text = progress_pane.immediate_child("progress_text").unwrap();
 
-        let result_pane = self.calc_rank_pane.immediate_child("result_pane").unwrap();
+        let result_pane = calc_rank_pane.immediate_child("result_pane").unwrap();
         let power_value_text = result_pane.immediate_child("power_value_text").unwrap();
 
-        let rank_pane = self.calc_rank_pane.immediate_child("rank_pane").unwrap();
+        let rank_pane = calc_rank_pane.immediate_child("rank_pane").unwrap();
         let inner_rank_pane = rank_pane.immediate_child("inner_rank_pane").unwrap();
-
-        self.calc_rank_pane.edit(|x| {
-            x.set_scale(1.0);
-            x.alpha = 255;
-        });
 
         progress_pane
             .immediate_child("calculating_text")
             .unwrap()
             .set_text(get_text(lang, "calculating"));
-        progress_pane.edit(|x| {
-            x.set_scale(1.0);
-            x.alpha = 255;
-        });
-        progress_text.edit(|x| {
-            x.set_scale(1.0);
-            x.alpha = 255;
-            x.set_text((progress - 1).to_string());
-        });
+        progress_text.set_text((progress - 1).to_string());
         progress_pane
             .immediate_child("total_text")
             .unwrap()
             .set_text(format!("/{total}"));
 
-        result_pane.set_alpha(0);
-        power_value_text.edit(|x| {
-            x.set_scale(1.0);
-        });
-
-        rank_pane.set_alpha(0);
-        inner_rank_pane.edit(|x| {
-            x.set_scale(1.0);
-            x.alpha = 0;
-        });
-
-        state.animate(&self.calc_rank_pane, WINDOW_IN, 60)?;
+        state.animate(&calc_rank_pane, WINDOW_IN, 60)?;
 
         progress_text.set_alpha(0);
-        state.render_frame(&self.calc_rank_pane, 1)?;
+        state.render_frame(&calc_rank_pane, 1)?;
 
         progress_text.set_text(progress.to_string());
-        state.animate(&self.calc_rank_pane, PROGRESS_IN, 120)?;
+        state.animate(&calc_rank_pane, PROGRESS_IN, 120)?;
 
         if let Some(calculated_power) = calculated_power {
             result_pane
@@ -217,11 +191,11 @@ impl AnimationGenerator {
                 .unwrap()
                 .set_text(get_text(lang, "calculated"));
             power_value_text.set_text(format_power(lang, "power_value", calculated_power));
-            state.animate(&self.calc_rank_pane, RESULT_POWER_IN, 180)?;
+            state.animate(&calc_rank_pane, RESULT_POWER_IN, 180)?;
         }
 
         if let Some(estimated_rank) = estimated_rank {
-            state.animate(&self.calc_rank_pane, WINDOW_OUT, 6)?;
+            state.animate(&calc_rank_pane, WINDOW_OUT, 6)?;
 
             result_pane.set_alpha(0);
             rank_pane.set_alpha(255);
@@ -239,11 +213,11 @@ impl AnimationGenerator {
                 .unwrap()
                 .set_text(format_rank(lang, estimated_rank));
 
-            state.animate(&self.calc_rank_pane, WINDOW_IN, 6)?;
-            state.animate(&self.calc_rank_pane, RESULT_RANK_IN, 120)?;
+            state.animate(&calc_rank_pane, WINDOW_IN, 6)?;
+            state.animate(&calc_rank_pane, RESULT_RANK_IN, 120)?;
         }
 
-        state.animate(&self.calc_rank_pane, WINDOW_OUT, 90)?;
+        state.animate(&calc_rank_pane, WINDOW_OUT, 90)?;
 
         state.push_frame(0);
         Ok(())
@@ -268,9 +242,9 @@ impl AnimationGenerator {
         }
 
         let mut state = self.state.borrow_mut();
+        let power_progress_pane = self.power_progress_pane.deep_clone();
 
-        let set_outcome_pane = self
-            .power_progress_pane
+        let set_outcome_pane = power_progress_pane
             .immediate_child("set_outcome_pane")
             .unwrap();
         let set_score_text = set_outcome_pane.immediate_child("set_score_text").unwrap();
@@ -280,17 +254,14 @@ impl AnimationGenerator {
         let win_lose_texts =
             set_outcome_pane.children(&["win_lose_pane", "animation_pane", "text"]);
 
-        let power_pane = self
-            .power_progress_pane
-            .immediate_child("power_pane")
-            .unwrap();
+        let power_pane = power_progress_pane.immediate_child("power_pane").unwrap();
         let power_text = power_pane.immediate_child("power_text").unwrap();
         let power_value_text = power_pane.immediate_child("power_value_text").unwrap();
 
         power_text.set_text(get_text(lang, "power"));
         power_value_text.set_text(format_power(lang, "power_value", old_power));
 
-        state.animate(&self.power_progress_pane, WINDOW_IN, 1)?;
+        state.animate(&power_progress_pane, WINDOW_IN, 1)?;
 
         let win_text = get_text(lang, "win");
         let lose_text = get_text(lang, "lose");
@@ -310,17 +281,12 @@ impl AnimationGenerator {
             base_pane.edit(|x| x.rect.reposition(pos));
             text_pane.set_text_and_color(text, color);
 
-            state.animate_specific_pane(
-                &self.power_progress_pane,
-                animation_pane,
-                WIN_LOSE_IN,
-                0,
-            )?;
+            state.animate_specific_pane(&power_progress_pane, animation_pane, WIN_LOSE_IN, 0)?;
         }
         state.push_frame(60);
 
         set_score_text.set_text(format!("{wins} - {losses}"));
-        state.animate(&self.power_progress_pane, SET_SCORE_IN, 60)?;
+        state.animate(&power_progress_pane, SET_SCORE_IN, 60)?;
 
         let power_change = format_power(
             lang,
@@ -336,16 +302,16 @@ impl AnimationGenerator {
             .child(&["power_diff", "value"])
             .unwrap()
             .set_text(power_change.clone());
-        state.animate(&self.power_progress_pane, POWER_DIFF_IN, 2)?;
+        state.animate(&power_progress_pane, POWER_DIFF_IN, 2)?;
 
         power_pane
             .immediate_child("point_diff_anim")
             .unwrap()
             .set_text(power_change);
-        state.animate(&self.power_progress_pane, POWER_ADD, 1)?;
+        state.animate(&power_progress_pane, POWER_ADD, 1)?;
 
         state.animate_value_change(
-            &self.power_progress_pane,
+            &power_progress_pane,
             &power_value_text,
             old_power,
             new_power,
@@ -354,7 +320,7 @@ impl AnimationGenerator {
             30,
         )?;
 
-        state.animate(&self.power_progress_pane, WINDOW_OUT, 2)?;
+        state.animate(&power_progress_pane, WINDOW_OUT, 2)?;
 
         self.generate_rank_change(lang, &mut state, old_rank, new_rank)?;
 
@@ -371,17 +337,15 @@ impl AnimationGenerator {
     ) -> Result<()> {
         use calc_rank_pane::*;
 
-        let rank_pane = self.calc_rank_pane.immediate_child("rank_pane").unwrap();
+        let calc_rank_pane = self.calc_rank_pane.deep_clone();
+
+        let rank_pane = calc_rank_pane.immediate_child("rank_pane").unwrap();
         let inner_rank_pane = rank_pane.immediate_child("inner_rank_pane").unwrap();
         let rank_arrow_root = inner_rank_pane.immediate_child("rank_arrow_root").unwrap();
         let rank_arrow_root_inner = rank_arrow_root.child(&["inner", "inner_inner"]).unwrap();
 
-        self.calc_rank_pane
+        calc_rank_pane
             .immediate_child("progress_pane")
-            .unwrap()
-            .set_alpha(0);
-        self.calc_rank_pane
-            .immediate_child("result_pane")
             .unwrap()
             .set_alpha(0);
         rank_pane.set_alpha(255);
@@ -414,10 +378,10 @@ impl AnimationGenerator {
             }
         }
 
-        state.animate(&self.calc_rank_pane, WINDOW_IN, 0)?;
+        state.animate(&calc_rank_pane, WINDOW_IN, 0)?;
 
         state.animate_value_change(
-            &self.calc_rank_pane,
+            &calc_rank_pane,
             &inner_rank_pane.immediate_child("rank_value_text").unwrap(),
             old_rank as f64,
             new_rank as f64,
@@ -426,7 +390,7 @@ impl AnimationGenerator {
             120,
         )?;
 
-        state.animate(&self.calc_rank_pane, WINDOW_OUT, 90)?;
+        state.animate(&calc_rank_pane, WINDOW_OUT, 90)?;
 
         Ok(())
     }

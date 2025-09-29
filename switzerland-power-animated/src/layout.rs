@@ -364,7 +364,7 @@ impl TextPaneContents {
     }
 }
 
-#[derive(Clone)]
+#[derive(Copy, Clone)]
 pub enum ExtraBehavior {
     None,
     AdjustToContentBounds {
@@ -410,6 +410,24 @@ impl BuiltPane {
         let rect = canvas.surface().rect();
         let pane = self.pane();
         pane.render(canvas, None, rect, pane.scale.0, pane.scale.1)
+    }
+
+    pub fn deep_clone(&self) -> BuiltPane {
+        let pane = self.pane();
+        BuiltPane(
+            self.0,
+            Rc::new(RefCell::new(Pane {
+                name: pane.name,
+                rect: pane.rect,
+                scale: pane.scale,
+                alpha: pane.alpha,
+                anchor: pane.anchor,
+                parent_anchor: pane.parent_anchor,
+                contents: pane.contents.clone(),
+                extra_behavior: pane.extra_behavior,
+                children: pane.children.iter().map(BuiltPane::deep_clone).collect(),
+            })),
+        )
     }
 
     pub fn immediate_child(&self, name: &str) -> Option<BuiltPane> {

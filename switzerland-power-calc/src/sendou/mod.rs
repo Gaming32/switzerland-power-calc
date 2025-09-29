@@ -611,22 +611,25 @@ fn send_progress_message_to_player(
         return Ok(());
     };
 
-    let message = other_team.map(|team| {
-        format!(
-            "{} {}",
-            match my_result.result.unwrap() {
-                TournamentMatchResult::Win => "VICTORY",
-                TournamentMatchResult::Loss => "DEFEAT",
-            },
-            format_link(
-                &format!("vs {}", team.members.first().unwrap().username),
-                &format!(
-                    "<https://sendou.ink/to/{}/matches/{}>",
-                    tournament_context.id, tourney_match.id
+    let message = other_team.map_or_else(
+        || "BYE".to_string(),
+        |team| {
+            format!(
+                "{} {}",
+                match my_result.result.unwrap() {
+                    TournamentMatchResult::Win => "VICTORY",
+                    TournamentMatchResult::Loss => "DEFEAT",
+                },
+                format_link(
+                    &format!("vs {}", team.members.first().unwrap().username),
+                    &format!(
+                        "<https://sendou.ink/to/{}/matches/{}>",
+                        tournament_context.id, tourney_match.id
+                    ),
                 ),
-            ),
-        )
-    });
+            )
+        },
+    );
 
     let client = client.clone();
     let http = http.clone();
