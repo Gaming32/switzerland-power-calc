@@ -87,6 +87,10 @@ impl Pane {
         inherited_x_scale: f64,
         inherited_y_scale: f64,
     ) -> Result<()> {
+        if self.alpha == 0 {
+            return Ok(());
+        }
+
         let local_rect = match self.extra_behavior {
             ExtraBehavior::AdjustToContentBounds {
                 sibling,
@@ -133,29 +137,25 @@ impl Pane {
         let accumulated_x_scale = inherited_x_scale * self.scale.0;
         let accumulated_y_scale = inherited_y_scale * self.scale.1;
 
-        match self.alpha {
-            0 => {}
-            255 => {
-                self.render_internal(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?
-            }
-            alpha => {
-                let mut sub_canvas = Surface::new(
-                    canvas.surface().width(),
-                    canvas.surface().height(),
-                    PIXEL_FORMAT,
-                )?
-                .into_canvas()?;
-                self.render_internal(
-                    &mut sub_canvas,
-                    draw_rect,
-                    accumulated_x_scale,
-                    accumulated_y_scale,
-                )?;
-                sub_canvas.surface_mut().set_alpha_mod(alpha);
-                sub_canvas
-                    .surface()
-                    .blit(None, canvas.surface_mut(), None)?;
-            }
+        if self.alpha == 255 {
+            self.render_internal(canvas, draw_rect, accumulated_x_scale, accumulated_y_scale)?
+        } else {
+            let mut sub_canvas = Surface::new(
+                canvas.surface().width(),
+                canvas.surface().height(),
+                PIXEL_FORMAT,
+            )?
+            .into_canvas()?;
+            self.render_internal(
+                &mut sub_canvas,
+                draw_rect,
+                accumulated_x_scale,
+                accumulated_y_scale,
+            )?;
+            sub_canvas.surface_mut().set_alpha_mod(self.alpha);
+            sub_canvas
+                .surface()
+                .blit(None, canvas.surface_mut(), None)?;
         }
         Ok(())
     }
