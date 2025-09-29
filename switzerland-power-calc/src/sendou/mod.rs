@@ -666,7 +666,7 @@ fn send_progress_message_to_player(
                 )
                 .await?;
             CreateMessage::new()
-                .content(message.unwrap_or_default())
+                .content(message)
                 .add_file(CreateAttachment::bytes(
                     animation,
                     format!("set-{set_id}-{my_team_id}.webp"),

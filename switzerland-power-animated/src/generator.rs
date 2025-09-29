@@ -99,18 +99,6 @@ impl AnimationGenerator {
         encode_frames(self.generate_frames(status, lang)?, &self.webp_config)
     }
 
-    pub async fn generate_async(
-        &self,
-        status: PowerStatus,
-        lang: AnimationLanguage,
-    ) -> Result<Vec<u8>> {
-        let frames = self.generate_frames(status, lang)?;
-        let webp_config = self.webp_config;
-        tokio::task::spawn_blocking(move || encode_frames(frames, &webp_config).map(|x| x.to_vec()))
-            .await
-            .unwrap()
-    }
-
     pub(crate) fn generate_frames(
         &self,
         status: PowerStatus,
