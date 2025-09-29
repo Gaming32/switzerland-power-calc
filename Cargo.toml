@@ -10,5 +10,5 @@ edition = "2024"
 
 [workspace.dependencies]
 thiserror = "2.0.12"
-tokio = { version = "1.47.1", features = ["rt", "macros"] }
+tokio = { version = "1.47.1", features = ["rt-multi-thread", "macros", "sync"] }
 itertools = "0.14.0"

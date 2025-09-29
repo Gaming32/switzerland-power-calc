@@ -87,6 +87,10 @@ impl AnimationGenerator {
         })
     }
 
+    pub fn webp_config(&self) -> &WebPConfig {
+        &self.webp_config
+    }
+
     pub fn webp_config_mut(&mut self) -> &mut WebPConfig {
         &mut self.webp_config
     }
@@ -107,7 +111,11 @@ impl AnimationGenerator {
             .unwrap()
     }
 
-    fn generate_frames(&self, status: PowerStatus, lang: AnimationLanguage) -> Result<FramesVec> {
+    pub(crate) fn generate_frames(
+        &self,
+        status: PowerStatus,
+        lang: AnimationLanguage,
+    ) -> Result<FramesVec> {
         match status {
             PowerStatus::Calculating { progress, total } => {
                 self.generate_calculating(lang, progress, total, None, None)?
@@ -419,7 +427,7 @@ impl AnimationGenerator {
     }
 }
 
-type FramesVec = Vec<(Vec<u8>, u32)>;
+pub(crate) type FramesVec = Vec<(Vec<u8>, u32)>;
 
 struct GeneratorState {
     canvas: SurfaceCanvas<'static>,
@@ -512,7 +520,7 @@ impl GeneratorState {
     }
 }
 
-fn encode_frames(frames: FramesVec, webp_config: &WebPConfig) -> Result<WebPMemory> {
+pub(crate) fn encode_frames(frames: FramesVec, webp_config: &WebPConfig) -> Result<WebPMemory> {
     let mut encoder = AnimEncoder::new(WIDTH, HEIGHT, webp_config);
 
     let mut frame_number = 0;

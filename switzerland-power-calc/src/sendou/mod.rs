@@ -38,7 +38,7 @@ use tokio::time::sleep;
 use trie_rs::Trie;
 use unic_emoji_char::{is_emoji, is_emoji_component};
 
-#[tokio::main(flavor = "current_thread")]
+#[tokio::main]
 pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Result<()> {
     if let Some(parent) = out_db.parent() {
         fs::create_dir_all(parent)?;
