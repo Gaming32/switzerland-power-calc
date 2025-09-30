@@ -25,8 +25,8 @@ use rustyline::{DefaultEditor, Editor, ExternalPrinter};
 use serenity::FutureExt;
 use serenity::all::{
     ActivityData, CacheHttp, Channel, ChannelId, ChannelType, CreateAttachment, CreateChannel,
-    CreateMessage, GatewayIntents, GuildId, Mentionable, PermissionOverwrite,
-    PermissionOverwriteType, Permissions, UserId,
+    CreateMessage, GatewayIntents, Guild, GuildId, Mentionable, PermissionOverwrite,
+    PermissionOverwriteType, Permissions,
 };
 use skillratings::Outcomes;
 use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2};
@@ -153,10 +153,9 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
     .await?;
 
     let new_db = finalize_tournament(out_db, &old_players, new_players)?;
-    let guild_members = get_guild()?.members.keys().copied().collect();
     send_summary_to_discord(
         &discord_http,
-        guild_members,
+        &*get_guild()?,
         moderator_channel,
         &old_players,
         teams,
@@ -731,7 +730,7 @@ fn finalize_tournament(
 
 async fn send_summary_to_discord(
     http: &DiscordHttp,
-    guild_members: HashSet<UserId>,
+    guild: &Guild,
     moderator_channel: ChannelId,
     old_players: &SwitzerlandPlayerMap,
     teams: TeamsMap<'_>,
@@ -748,7 +747,16 @@ async fn send_summary_to_discord(
 
     let mut players_in_discord = HashSet::new();
     for user_id in player_name_to_discord_id.values().copied() {
-        if guild_members.contains(&user_id) {
+        if matches!(
+            guild.member(http, user_id).await,
+            Ok(_)
+                | Err(serenity::Error::Http(
+                    serenity::http::HttpError::UnsuccessfulRequest(serenity::http::ErrorResponse {
+                        status_code: reqwest::StatusCode::NOT_FOUND,
+                        ..
+                    })
+                ))
+        ) {
             players_in_discord.insert(user_id);
         }
     }

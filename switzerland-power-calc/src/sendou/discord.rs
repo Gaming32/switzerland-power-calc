@@ -1,4 +1,4 @@
-use serenity::all::{Cache, CacheHttp, Context, EventHandler, Http, Ready};
+use serenity::all::{Cache, CacheHttp, Context, EventHandler, GuildId, Http};
 use std::sync::{Arc, Mutex};
 use tokio::sync::oneshot;
 
@@ -8,7 +8,7 @@ pub struct DiscordEventHandler {
 
 #[serenity::async_trait]
 impl EventHandler for DiscordEventHandler {
-    async fn ready(&self, _ctx: Context, _data_about_bot: Ready) {
+    async fn cache_ready(&self, _: Context, _: Vec<GuildId>) {
         if let Some(sender) = self.ready.lock().unwrap().take() {
             let _ = sender.send(());
         }
