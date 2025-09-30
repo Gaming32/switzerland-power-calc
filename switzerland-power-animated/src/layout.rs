@@ -87,7 +87,9 @@ impl Pane {
         inherited_y_scale: f64,
         inherited_alpha: f64,
     ) -> Result<()> {
-        if self.alpha == 0 {
+        let accumulated_alpha = inherited_alpha * (self.alpha as f64 / 255.0);
+        let alpha_8 = (accumulated_alpha * 255.0) as u8;
+        if alpha_8 == 0 {
             return Ok(());
         }
 
@@ -137,15 +139,27 @@ impl Pane {
 
         let accumulated_x_scale = inherited_x_scale * self.scale.0;
         let accumulated_y_scale = inherited_y_scale * self.scale.1;
-        let accumulated_alpha = inherited_alpha * (self.alpha as f64 / 255.0);
 
-        self.render_internal(
+        self.contents.render(
             canvas,
             draw_rect,
             accumulated_x_scale,
             accumulated_y_scale,
-            accumulated_alpha,
-        )
+            alpha_8,
+        )?;
+
+        for child in &self.children {
+            child.pane().render(
+                canvas,
+                Some(self),
+                draw_rect,
+                accumulated_x_scale,
+                accumulated_y_scale,
+                accumulated_alpha,
+            )?;
+        }
+
+        Ok(())
     }
 
     fn compute_local_draw_rect(
@@ -179,41 +193,6 @@ impl Pane {
             width,
             height,
         )
-    }
-
-    fn render_internal(
-        &self,
-        canvas: &mut SurfaceCanvas,
-        draw_rect: Rect,
-        accumulated_x_scale: f64,
-        accumulated_y_scale: f64,
-        accumulated_alpha: f64,
-    ) -> Result<()> {
-        let alpha_8 = (accumulated_alpha * 255.0) as u8;
-        if alpha_8 == 0 {
-            return Ok(());
-        }
-
-        self.contents.render(
-            canvas,
-            draw_rect,
-            accumulated_x_scale,
-            accumulated_y_scale,
-            alpha_8,
-        )?;
-
-        for child in &self.children {
-            child.pane().render(
-                canvas,
-                Some(self),
-                draw_rect,
-                accumulated_x_scale,
-                accumulated_y_scale,
-                accumulated_alpha,
-            )?;
-        }
-
-        Ok(())
     }
 }
 
