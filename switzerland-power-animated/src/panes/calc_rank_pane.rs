@@ -32,7 +32,7 @@ pub fn calc_rank_pane(
             .build(),
             Pane {
                 rect: Rect::new(0, 2, 811, 10),
-                contents: PaneContents::Custom(|canvas, rect| {
+                contents: PaneContents::Custom(|canvas, rect, alpha| {
                     for i in 0..101 {
                         let x = rect.x + i * 8;
                         // WARNING: filled_circle takes in ABGR instead of RGBA
@@ -40,7 +40,7 @@ pub fn calc_rank_pane(
                             x as i16 + 4,
                             rect.y as i16 + 4,
                             2,
-                            (64, 255, 255, 255),
+                            (alpha / 4, 255, 255, 255),
                         )?;
                     }
                     Ok(())

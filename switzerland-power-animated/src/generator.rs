@@ -10,7 +10,7 @@ use itertools::izip;
 use sdl2::Sdl;
 use sdl2::image::{InitFlag, Sdl2ImageContext};
 use sdl2::pixels::{Color, PixelFormatEnum};
-use sdl2::render::{BlendMode, SurfaceCanvas};
+use sdl2::render::SurfaceCanvas;
 use sdl2::surface::Surface;
 use sdl2::ttf::Sdl2TtfContext;
 use std::cell::RefCell;
@@ -465,7 +465,6 @@ impl GeneratorState {
     fn clear_canvas(&mut self) {
         const CLEAR_COLOR: Color = Color::RGBA(0, 0, 0, 0);
         self.canvas.set_draw_color(CLEAR_COLOR);
-        self.canvas.set_blend_mode(BlendMode::None);
         self.canvas.clear();
     }
 
