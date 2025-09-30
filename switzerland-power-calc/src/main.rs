@@ -1,6 +1,7 @@
 mod cli_helpers;
 mod db;
 mod error;
+mod lang;
 mod sendou;
 mod tourney;
 
@@ -18,6 +19,8 @@ use std::process::exit;
 use switzerland_power_animated::{
     AnimationGenerator, AnimationLanguage, MatchOutcome, PowerStatus,
 };
+use tracing_subscriber::EnvFilter;
+use tracing_subscriber::filter::LevelFilter;
 
 #[derive(clap::Parser, Debug)]
 struct Args {
@@ -191,6 +194,13 @@ fn main() {
 
 fn run(args: Args) -> Result<()> {
     use Commands::*;
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::builder()
+                .with_default_directive(LevelFilter::INFO.into())
+                .from_env()?,
+        )
+        .init();
     match args.command {
         Init { db } => {
             db::init_db(&db)?;

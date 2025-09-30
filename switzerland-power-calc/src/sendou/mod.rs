@@ -1,8 +1,10 @@
+mod discord;
 mod schema;
 mod types;
 
 use crate::cli_helpers::{TrieHinter, print_seeding_instructions};
 use crate::db::{Database, SwitzerlandPlayer, SwitzerlandPlayerMap};
+use crate::sendou::discord::{DiscordEventHandler, DiscordHttp};
 use crate::sendou::schema::{
     MatchRoot, SendouId, TournamentContext, TournamentData, TournamentMatch,
     TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus, TournamentRoot,
@@ -17,14 +19,14 @@ use crate::{
 use ansi_term::Color;
 use chrono::Utc;
 use itertools::Itertools;
-use reqwest::{Client, Url};
+use reqwest::{Client as ReqwestClient, Url};
 use rustyline::history::DefaultHistory;
 use rustyline::{DefaultEditor, Editor, ExternalPrinter};
 use serenity::FutureExt;
 use serenity::all::{
-    Builder, Channel, ChannelId, ChannelType, CreateAttachment, CreateChannel, CreateMessage,
-    GuildChannel, Http, HttpBuilder, Mentionable, PartialGuild, PermissionOverwrite,
-    PermissionOverwriteType, Permissions,
+    ActivityData, Channel, ChannelId, ChannelType, CreateAttachment, CreateChannel, CreateMessage,
+    GatewayIntents, Guild, GuildChannel, Mentionable, PermissionOverwrite, PermissionOverwriteType,
+    Permissions,
 };
 use skillratings::Outcomes;
 use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2};
@@ -34,11 +36,12 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 use switzerland_power_animated::{
     AnimationLanguage, AsyncAnimationGenerator, MatchOutcome, PowerStatus,
 };
+use tokio::sync::oneshot;
 use tokio::time::sleep;
 use trie_rs::Trie;
 use unic_emoji_char::{is_emoji, is_emoji_component};
@@ -54,7 +57,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         url.set_query(Some("_data=features/tournament/routes/to.$id"));
         url
     };
-    let client = reqwest::ClientBuilder::new()
+    let http_client = reqwest::ClientBuilder::new()
         .user_agent(concat!(
             env!("CARGO_PKG_NAME"),
             " (https://github.com/Gaming32/switzerland-power-calc, ",
@@ -63,14 +66,23 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         ))
         .build()?;
 
-    let http = Arc::new(
-        HttpBuilder::new(env_str("DISCORD_BOT_TOKEN")?)
-            .client(client.clone())
-            .build(),
-    );
+    let (discord_ready_send, discord_ready) = oneshot::channel();
+    let discord_client = serenity::client::ClientBuilder::new(
+        env_str("DISCORD_BOT_TOKEN")?,
+        GatewayIntents::GUILDS | GatewayIntents::GUILD_MEMBERS,
+    )
+    .event_handler(DiscordEventHandler {
+        ready: Mutex::new(Some(discord_ready_send)),
+    })
+    .activity(ActivityData::competing("Switzerland"))
+    .await?;
+    discord_client.shard_manager.set_shards(0, 1, 1).await;
+    discord_client.shard_manager.initialize()?;
+    discord_ready.await.unwrap();
+    let discord_http = DiscordHttp::new(discord_client.cache.clone(), discord_client.http.clone());
 
     let chat_category = match env::<ChannelId>("DISCORD_CHAT_CATEGORY_ID")?
-        .to_channel(&http)
+        .to_channel(&discord_http)
         .await?
     {
         Channel::Private(channel) => {
@@ -89,10 +101,15 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         _ => return Err(Error::Custom("Your Discord channel is weird".to_string())),
     };
     let moderator_channel = env::<ChannelId>("DISCORD_MODERATOR_CHANNEL_ID")?;
-    let chat_guild = chat_category.guild_id.to_partial_guild(&http).await?;
+    let chat_guild = chat_category
+        .guild_id
+        .to_guild_cached(discord_http.cache())
+        .ok_or_else(|| {
+            Error::Custom("Chat category Discord is not accessible by bot".to_string())
+        })?;
 
     let get_tournament = async || -> Result<_> {
-        Ok(client
+        Ok(http_client
             .get(tournament_url.clone())
             .send()
             .await?
@@ -108,12 +125,17 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
 
     let teams = initialize_teams(&tournament_context, &old_players, &mut new_players)?;
     wait_for_tournament_start(&tournament_context, &get_tournament).await?;
-    let discord_channels =
-        create_discord_channels(&http, &chat_guild, chat_category.id, &get_tournament).await?;
+    let discord_channels = create_discord_channels(
+        &discord_http,
+        &chat_guild,
+        chat_category.id,
+        &get_tournament,
+    )
+    .await?;
 
     run_tournament(
-        &client,
-        &http,
+        &http_client,
+        &discord_http,
         &old_players,
         &mut new_players,
         &teams,
@@ -124,7 +146,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
 
     let new_db = finalize_tournament(out_db, &old_players, new_players)?;
     send_summary_to_discord(
-        &http,
+        &discord_http,
         &chat_guild,
         moderator_channel,
         &old_players,
@@ -136,7 +158,9 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
 
     println!("Press enter when finished to clean up Discord channels");
     let _ = std::io::stdin().read(&mut [0]);
-    clean_up_discord_channels(&http, discord_channels.into_values()).await;
+    clean_up_discord_channels(&discord_http, discord_channels.into_values()).await;
+
+    discord_client.shard_manager.shutdown_all().await;
 
     Ok(())
 }
@@ -243,9 +267,11 @@ async fn wait_for_tournament_start(
     Ok(())
 }
 
+// FIXME: It always seems to be able to create only one channel and one message before freezing
+// Sometimes it can only create a single channel (no message) before freezing
 async fn create_discord_channels(
-    http: &Http,
-    chat_guild: &PartialGuild,
+    discord_http: &DiscordHttp,
+    chat_guild: &Guild,
     category: ChannelId,
     get_tournament: &impl GetTournamentFn,
 ) -> Result<DiscordChannelsMap> {
@@ -253,11 +279,10 @@ async fn create_discord_channels(
 
     let mut channels = HashMap::new();
 
-    let me_user = http.get_current_user().await?;
+    let me_user = discord_http.cache().current_user();
     let mut existing_channels_by_name = chat_guild
-        .channels(&http)
-        .await?
-        .into_values()
+        .channels
+        .values()
         .map(|x| (x.name.clone(), x))
         .collect::<HashMap<_, _>>();
 
@@ -266,20 +291,18 @@ async fn create_discord_channels(
             continue;
         }
         let player = team.members.first().unwrap();
-        let user = player.discord_id.to_user(http).await?;
+        let user = player.discord_id.to_user(discord_http).await?;
         let channel_name = format!("switzerland-{}", user.name.replace('.', ""));
         let channel = if let Some(channel) = existing_channels_by_name.remove(&channel_name) {
-            channel.send_message(http, CreateMessage::new().content(
-                "(the bot crashed and needed a restart; you may see some duplicated messages below)"
-            )).await?;
-            channel
+            channel.say(discord_http, "(the bot crashed and needed a restart; you may see some duplicated messages below)").await?;
+            channel.clone()
         } else {
             let channel = chat_guild
                 .create_channel(
-                    http,
+                    discord_http,
                     CreateChannel::new(channel_name)
                         .category(category)
-                        .permissions(vec![
+                        .permissions([
                             PermissionOverwrite {
                                 allow: Permissions::VIEW_CHANNEL | Permissions::SEND_MESSAGES,
                                 deny: Permissions::empty(),
@@ -298,15 +321,10 @@ async fn create_discord_channels(
                         ]),
                 )
                 .await?;
-            channel
-                .send_message(
-                    http,
-                    CreateMessage::new().content(format!(
-                        "{} in this channel, you will receive live updates for your Switzerland Power throughout the tournament.",
-                        user.mention(),
-                    ))
-                )
-                .await?;
+            channel.say(discord_http, format!(
+                "{} in this channel, you will receive live updates for your Switzerland Power throughout the tournament.",
+                user.mention(),
+            )).await?;
             channel
         };
         channels.insert(team.id, channel);
@@ -316,8 +334,8 @@ async fn create_discord_channels(
 }
 
 async fn run_tournament(
-    client: &Client,
-    http: &Arc<Http>,
+    http_client: &ReqwestClient,
+    http: &DiscordHttp,
     original_players: &SwitzerlandPlayerMap,
     players: &mut SwitzerlandPlayerMap,
     teams: &TeamsMap<'_>,
@@ -447,7 +465,7 @@ async fn run_tournament(
                 let (team, player, rating) = get_player(&opponent);
                 let rank = old_ranks.get(player).copied();
                 send_progress_message_to_player(
-                    client,
+                    http_client,
                     http,
                     original_players,
                     discord_channels,
@@ -511,7 +529,7 @@ async fn run_tournament(
                     format_player_simply(Some(&old_player), player, false)
                 )?;
                 send_progress_message_to_player(
-                    client,
+                    http_client,
                     http,
                     original_players,
                     discord_channels,
@@ -561,8 +579,8 @@ async fn run_tournament(
 // Yeah, I'd rather it had fewer too, but I'm not too sure what to do about that
 #[allow(clippy::too_many_arguments)]
 fn send_progress_message_to_player(
-    client: &Client,
-    http: &Arc<Http>,
+    http_client: &ReqwestClient,
+    discord_http: &DiscordHttp,
     original_players: &SwitzerlandPlayerMap,
     discord_channels: &DiscordChannelsMap,
     tournament_context: &TournamentContext,
@@ -631,8 +649,8 @@ fn send_progress_message_to_player(
         },
     );
 
-    let client = client.clone();
-    let http = http.clone();
+    let http_client = http_client.clone();
+    let discord_http = discord_http.clone();
     let channel_id = discord_channel.id;
     let tourney_id = tournament_context.id;
     let set_id = tourney_match.id;
@@ -641,7 +659,7 @@ fn send_progress_message_to_player(
     tokio::spawn(
         async move {
             if let PowerStatus::SetPlayed { matches, .. } = &mut power_status {
-                let match_results = client
+                let match_results = http_client
                     .get(format!(
                         "https://sendou.ink/to/{tourney_id}/matches/{set_id}?_data"
                     ))
@@ -665,13 +683,16 @@ fn send_progress_message_to_player(
                     AnimationLanguage::default(), // TODO: Make configurable
                 )
                 .await?;
-            CreateMessage::new()
-                .content(message)
-                .add_file(CreateAttachment::bytes(
-                    animation,
-                    format!("set-{set_id}-{my_team_id}.webp"),
-                ))
-                .execute(http, (channel_id, None))
+            channel_id
+                .send_message(
+                    discord_http,
+                    CreateMessage::new()
+                        .content(message)
+                        .add_file(CreateAttachment::bytes(
+                            animation,
+                            format!("set-{set_id}-{my_team_id}.webp"),
+                        )),
+                )
                 .await?;
             Ok::<(), Error>(())
         }
@@ -707,8 +728,8 @@ fn finalize_tournament(
 }
 
 async fn send_summary_to_discord(
-    http: &Http,
-    chat_guild: &PartialGuild,
+    http: &DiscordHttp,
+    chat_guild: &Guild,
     moderator_channel: ChannelId,
     old_players: &SwitzerlandPlayerMap,
     teams: TeamsMap<'_>,
@@ -852,7 +873,10 @@ fn compute_results(tournament_data: &TournamentData) -> Vec<(&str, [SendouId; 3]
         .collect()
 }
 
-async fn clean_up_discord_channels(http: &Http, channels: impl IntoIterator<Item = GuildChannel>) {
+async fn clean_up_discord_channels(
+    http: &DiscordHttp,
+    channels: impl IntoIterator<Item = GuildChannel>,
+) {
     println!("Deleting Discord channels...");
     for channel in channels {
         let _ = channel.delete(&http).await;
