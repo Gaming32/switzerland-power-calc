@@ -70,7 +70,7 @@ enum Commands {
         tournament_url: String,
     },
     /// Generate an animation
-    Animation {
+    Animate {
         /// The WebP quality to use for the animation between 0 and 100. For lossy, 0 gives the
         /// smallest size and 100 the largest. For lossless, this parameter is the amount of effort
         /// put into the compression: 0 is the fastest but gives larger files compared to the
@@ -91,8 +91,10 @@ enum Commands {
 }
 
 #[derive(clap::Subcommand, Debug)]
+#[clap(flatten_help = true)]
 enum ParsedPowerStatus {
     /// Generate a progress calculating animation
+    #[clap(disable_help_flag = true)]
     Calculating {
         /// The new progress through the calculations
         #[arg(value_parser = clap::value_parser!(u8).range(1..))]
@@ -102,6 +104,7 @@ enum ParsedPowerStatus {
         total: u8,
     },
     /// Generate a calculation complete animation
+    #[clap(disable_help_flag = true)]
     Calculated {
         /// The total length of the calculations
         #[arg(value_parser = clap::value_parser!(u8).range(3..))]
@@ -113,6 +116,7 @@ enum ParsedPowerStatus {
         rank: u32,
     },
     /// Generate a set played complete animation
+    #[clap(disable_help_flag = true)]
     SetPlayed {
         /// The previous Switzerland Power
         old_power: f64,
@@ -240,7 +244,7 @@ fn run(args: Args) -> Result<()> {
             out_db,
             tournament_url,
         } => sendou_cli(&in_db, &out_db, &tournament_url)?,
-        Animation {
+        Animate {
             quality,
             lossless,
             lang,
