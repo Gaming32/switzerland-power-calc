@@ -122,6 +122,7 @@ pub struct TournamentTeamMember {
     pub username: String,
     pub discord_id: serenity::all::UserId,
     pub custom_url: Option<String>,
+    pub country: String,
     pub in_game_name: String,
 }
 

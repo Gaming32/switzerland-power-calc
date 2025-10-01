@@ -1,7 +1,6 @@
 mod cli_helpers;
 mod db;
 mod error;
-mod lang;
 mod sendou;
 mod tourney;
 
@@ -197,7 +196,7 @@ fn run(args: Args) -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             EnvFilter::builder()
-                .with_default_directive(LevelFilter::INFO.into())
+                .with_default_directive(LevelFilter::WARN.into())
                 .from_env()?,
         )
         .init();

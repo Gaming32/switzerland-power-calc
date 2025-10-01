@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::lang::Language;
+use crate::sendou::lang::Language;
 use hashlink::LinkedHashMap;
 use serde::{Deserialize, Serialize};
 use skillratings::glicko2::Glicko2Rating;

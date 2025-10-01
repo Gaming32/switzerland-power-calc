@@ -15,7 +15,7 @@ smallvec = "1.15.1"
 phf = "0.13.1"
 phf_shared = "0.13.1"
 strfmt = "0.2.5"
-derive_more = { version = "2.0.1", features = ["from_str"] }
+derive_more = { workspace = true, features = ["from_str"] }
 crossbeam-channel = "0.5.15"
 
 [dependencies.sdl2]
@@ -27,7 +27,7 @@ features = ["ttf", "image", "gfx", "static-link", "use-vcpkg"]
 serde_json = "1.0.145"
 phf_codegen = "0.13.1"
 phf_shared = "0.13.1"
-derive_more = { version = "2.0.1", features = ["from_str"] }
+derive_more = { workspace = true, features = ["from_str"] }
 
 [package.metadata.vcpkg]
 dependencies = ["sdl2", "sdl2-image", "sdl2-ttf", "sdl2-gfx"]
