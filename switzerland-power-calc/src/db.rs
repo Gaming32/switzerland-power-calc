@@ -1,4 +1,5 @@
 use crate::error::Result;
+use crate::sendou::lang::Language;
 use hashlink::LinkedHashMap;
 use serde::{Deserialize, Serialize};
 use skillratings::glicko2::Glicko2Rating;
@@ -17,6 +18,8 @@ pub struct Database {
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct SwitzerlandPlayer {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language: Option<Language>,
     #[serde(skip)]
     pub rank: Option<NonZeroU32>,
     #[serde(flatten)]

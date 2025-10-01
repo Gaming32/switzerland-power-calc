@@ -15,12 +15,16 @@ pub enum Error {
     MissingEnv(String),
     #[error("Invalid environment variable {0}: {1}")]
     InvalidEnv(String, #[source] Box<dyn std::error::Error + Send>),
+    #[error("Invalid logging environment: {0}")]
+    InvalidLogEnv(#[from] tracing_subscriber::filter::FromEnvError),
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
     #[error("URL parsing error: {0}")]
     Url(#[from] url::ParseError),
     #[error("Discord error: {0}")]
     Discord(#[source] Box<serenity::Error>),
+    #[error("Animation error: {0}")]
+    Animation(#[from] switzerland_power_animated::Error),
     #[error("{0}")]
     Custom(String),
 }

@@ -122,8 +122,20 @@ pub struct TournamentTeamMember {
     pub username: String,
     pub discord_id: serenity::all::UserId,
     pub custom_url: Option<String>,
+    pub country: String,
     pub in_game_name: String,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub struct TournamentTeamCheckIn {}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct MatchRoot {
+    pub results: Vec<MatchResult>,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatchResult {
+    pub winner_team_id: SendouId,
+}
