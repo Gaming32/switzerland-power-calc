@@ -393,9 +393,7 @@ async fn create_discord_channels(
         let user = player.discord_id.to_user(discord_http).await?;
         let channel_name = format!("switzerland-{}", user.name.replace('.', ""));
         let channel = if let Some(channel) = guild_channels_by_name.remove(&channel_name) {
-            channel
-                .say(discord_http, language.bot_crashed())
-                .await?;
+            channel.say(discord_http, language.bot_crashed()).await?;
             channel
         } else {
             let channel = guild_id
@@ -772,19 +770,21 @@ fn send_progress_message_to_player(
 
     let message = other_team.map_or_else(
         || language.round_bye().to_string(),
-        |team| format_link(
-            &language.round_played(
-                &match my_result.result.unwrap() {
-                    TournamentMatchResult::Win => language.to_animation_language().win(),
-                    TournamentMatchResult::Loss => language.to_animation_language().lose(),
-                },
-                &team.members.first().unwrap().username,
-            ),
-            &format!(
-                "<https://sendou.ink/to/{}/matches/{}>",
-                tournament_context.id, tourney_match.id
-            ),
-        ),
+        |team| {
+            format_link(
+                &language.round_played(
+                    match my_result.result.unwrap() {
+                        TournamentMatchResult::Win => language.to_animation_language().win(),
+                        TournamentMatchResult::Loss => language.to_animation_language().lose(),
+                    },
+                    &team.members.first().unwrap().username,
+                ),
+                &format!(
+                    "<https://sendou.ink/to/{}/matches/{}>",
+                    tournament_context.id, tourney_match.id
+                ),
+            )
+        },
     );
 
     let http_client = http_client.clone();
