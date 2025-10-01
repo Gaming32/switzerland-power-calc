@@ -68,31 +68,16 @@ pub enum Language {
 
 impl From<Language> for AnimationLanguage {
     fn from(val: Language) -> Self {
-        match val {
-            Language::ChineseChina => AnimationLanguage::CNzh,
-            Language::ChineseTaiwan => AnimationLanguage::TWzh,
-            Language::Dutch => AnimationLanguage::EUnl,
-            Language::EnglishUnitedKingdom => AnimationLanguage::EUen,
-            Language::EnglishUnitedStates => AnimationLanguage::USen,
-            Language::FrenchCanada => AnimationLanguage::USfr,
-            Language::FrenchFrance => AnimationLanguage::EUfr,
-            Language::German => AnimationLanguage::EUde,
-            Language::Italian => AnimationLanguage::EUit,
-            Language::Japanese => AnimationLanguage::JPja,
-            Language::Korean => AnimationLanguage::KRko,
-            Language::Russian => AnimationLanguage::EUru,
-            Language::SpanishLatinAmerica => AnimationLanguage::USes,
-            Language::SpanishSpain => AnimationLanguage::EUes,
-        }
+        val.to_animation_language()
     }
 }
 
-// Loosely based on https://support.apple.com/guide/apple-business-connect/language-list-for-showcases-abcb88b4fea6/web because why not
 impl Language {
     pub fn supported_languages() -> &'static [Self] {
         Self::value_variants()
     }
 
+    // Loosely based on https://support.apple.com/guide/apple-business-connect/language-list-for-showcases-abcb88b4fea6/web because why not
     pub fn guess_from_country(country: &str) -> Option<Self> {
         Some(match country {
             "CN" => Language::ChineseChina,
@@ -154,7 +139,7 @@ impl Language {
     }
 
     pub fn name(&self) -> &'static str {
-        AnimationLanguage::from(*self).language_name()
+        self.to_animation_language().language_name()
     }
 
     pub fn discord_id(&self) -> Option<&'static str> {
@@ -212,6 +197,25 @@ impl Language {
             None => Some(Self::default()),
         }
     }
+
+    pub fn to_animation_language(self) -> AnimationLanguage {
+        match self {
+            Language::ChineseChina => AnimationLanguage::CNzh,
+            Language::ChineseTaiwan => AnimationLanguage::TWzh,
+            Language::Dutch => AnimationLanguage::EUnl,
+            Language::EnglishUnitedKingdom => AnimationLanguage::EUen,
+            Language::EnglishUnitedStates => AnimationLanguage::USen,
+            Language::FrenchCanada => AnimationLanguage::USfr,
+            Language::FrenchFrance => AnimationLanguage::EUfr,
+            Language::German => AnimationLanguage::EUde,
+            Language::Italian => AnimationLanguage::EUit,
+            Language::Japanese => AnimationLanguage::JPja,
+            Language::Korean => AnimationLanguage::KRko,
+            Language::Russian => AnimationLanguage::EUru,
+            Language::SpanishLatinAmerica => AnimationLanguage::USes,
+            Language::SpanishSpain => AnimationLanguage::EUes,
+        }
+    }
 }
 
 impl Debug for Language {
@@ -266,8 +270,8 @@ macro_rules! language_messages {
 }
 
 language_messages! {
-    bot_crashed(language_command: &CommandIdDisplay) => {
-        Language::EnglishUnitedStates => "(the bot crashed and needed a restart; you may see some duplicated messages below; you may also have to set your {language_command} again)",
+    bot_crashed => {
+        Language::EnglishUnitedStates => "(the bot crashed and needed a restart; you may see some duplicated messages below)",
     },
     channel_explanation(user: Mention) => {
         Language::EnglishUnitedStates => "{user} in this channel, you will receive live updates for your Switzerland Power throughout the tournament.",
@@ -296,5 +300,11 @@ language_messages! {
     },
     changed_language(language: Language) => {
         Language::EnglishUnitedStates => "Bot language changed to {language}",
+    },
+    round_bye => {
+        Language::EnglishUnitedStates => "BYE",
+    },
+    round_played(win_lose: &str, against: &str) => {
+        Language::EnglishUnitedStates => "{win_lose} vs {against}",
     },
 }
