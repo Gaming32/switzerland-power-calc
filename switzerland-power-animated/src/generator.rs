@@ -3,7 +3,7 @@ use crate::font::FontSet;
 use crate::layout::{BuiltPane, PaneContents};
 use crate::panes::{calc_rank_pane, power_progress_pane};
 use crate::status::SetScore;
-use crate::texts::{AnimationLanguage, format_power, format_rank, get_text};
+use crate::texts::AnimationLanguage;
 use crate::{Error, Result};
 use crate::{MatchOutcome, PowerStatus};
 use itertools::izip;
@@ -158,7 +158,7 @@ impl AnimationGenerator {
         progress_pane
             .immediate_child("calculating_text")
             .unwrap()
-            .set_text(get_text(lang, "calculating"));
+            .set_text(lang.calculating());
         progress_text.set_text((progress - 1).to_string());
         progress_pane
             .immediate_child("total_text")
@@ -177,8 +177,8 @@ impl AnimationGenerator {
             result_pane
                 .immediate_child("calculated_text")
                 .unwrap()
-                .set_text(get_text(lang, "calculated"));
-            power_value_text.set_text(format_power(lang, "power_value", calculated_power));
+                .set_text(lang.calculated());
+            power_value_text.set_text(lang.power_value(calculated_power));
             state.animate(&calc_rank_pane, RESULT_POWER_IN, 180)?;
         }
 
@@ -191,15 +191,15 @@ impl AnimationGenerator {
             rank_pane
                 .immediate_child("position_text")
                 .unwrap()
-                .set_text(get_text(lang, "position"));
+                .set_text(lang.position());
             rank_pane
                 .immediate_child("estimate_text")
                 .unwrap()
-                .set_text(get_text(lang, "estimate"));
+                .set_text(lang.estimate());
             inner_rank_pane
                 .immediate_child("rank_value_text")
                 .unwrap()
-                .set_text(format_rank(lang, estimated_rank));
+                .set_text(lang.rank_value(estimated_rank));
 
             state.animate(&calc_rank_pane, WINDOW_IN, 6)?;
             state.animate(&calc_rank_pane, RESULT_RANK_IN, 120)?;
@@ -246,13 +246,11 @@ impl AnimationGenerator {
         let power_text = power_pane.immediate_child("power_text").unwrap();
         let power_value_text = power_pane.immediate_child("power_value_text").unwrap();
 
-        power_text.set_text(get_text(lang, "power"));
-        power_value_text.set_text(format_power(lang, "power_value", old_power));
+        power_text.set_text(lang.power());
+        power_value_text.set_text(lang.power_value(old_power));
 
         state.animate(&power_progress_pane, WINDOW_IN, 1)?;
 
-        let win_text = get_text(lang, "win");
-        let lose_text = get_text(lang, "lose");
         for (outcome, base_pane, animation_pane, text_pane, pos) in izip!(
             matches.into_iter().filter(|x| *x != MatchOutcome::Unplayed),
             win_lose_panes.iter(),
@@ -261,8 +259,8 @@ impl AnimationGenerator {
             WIN_LOSE_POSITIONS[wins + losses - 2]
         ) {
             let (color, text) = match outcome {
-                MatchOutcome::Win => (WIN_COLOR, win_text),
-                MatchOutcome::Lose => (LOSE_COLOR, lose_text),
+                MatchOutcome::Win => (WIN_COLOR, lang.win()),
+                MatchOutcome::Lose => (LOSE_COLOR, lang.lose()),
                 MatchOutcome::Unplayed => unreachable!(),
             };
 
@@ -276,15 +274,12 @@ impl AnimationGenerator {
         set_score_text.set_text(format!("{wins} - {losses}"));
         state.animate(&power_progress_pane, SET_SCORE_IN, 60)?;
 
-        let power_change = format_power(
-            lang,
-            if new_power >= old_power {
-                "power_up"
-            } else {
-                "power_down"
-            },
-            new_power - old_power,
-        );
+        let power_change = new_power - old_power;
+        let power_change = if power_change >= 0.0 {
+            lang.power_up(power_change)
+        } else {
+            lang.power_down(power_change)
+        };
 
         power_pane
             .child(&["power_diff", "value"])
@@ -304,7 +299,7 @@ impl AnimationGenerator {
             old_power,
             new_power,
             |distance| distance.powf(0.1).max(distance / 180.0),
-            |power| format_power(lang, "power_value", power),
+            |power| lang.power_value(power),
             30,
         )?;
 
@@ -342,15 +337,15 @@ impl AnimationGenerator {
         rank_pane
             .immediate_child("position_text")
             .unwrap()
-            .set_text(get_text(lang, "position"));
+            .set_text(lang.position());
         rank_pane
             .immediate_child("estimate_text")
             .unwrap()
-            .set_text(get_text(lang, "estimate"));
+            .set_text(lang.estimate());
         inner_rank_pane
             .immediate_child("rank_value_text")
             .unwrap()
-            .set_text(format_rank(lang, old_rank));
+            .set_text(lang.rank_value(old_rank));
 
         rank_arrow_root_inner.edit(|x| x.rect.set_x(if new_rank == old_rank { 20 } else { 0 }));
         let rank_arrow_name = match new_rank.cmp(&old_rank) {
@@ -374,7 +369,7 @@ impl AnimationGenerator {
             old_rank as f64,
             new_rank as f64,
             |distance| distance / 120.0,
-            |rank| format_rank(lang, rank.round() as u32),
+            |rank| lang.rank_value(rank.round() as u32),
             120,
         )?;
 

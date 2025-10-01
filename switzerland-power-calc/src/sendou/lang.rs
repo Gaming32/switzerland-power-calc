@@ -154,7 +154,7 @@ impl Language {
     }
 
     pub fn name(&self) -> &'static str {
-        AnimationLanguage::from(*self).name()
+        AnimationLanguage::from(*self).language_name()
     }
 
     pub fn discord_id(&self) -> Option<&'static str> {
@@ -292,7 +292,7 @@ language_messages! {
         Language::EnglishUnitedStates => "The language to use. If not specified, the language of your Discord client is used",
     },
     language_command_explanation(command: &CommandIdDisplay) => {
-        Language::EnglishUnitedStates => "You can use the {command} command to change languages for these messages. (Translations are best effort and some may be missing.)",
+        Language::EnglishUnitedStates => "You can use the {command} command to change languages for these messages. (Translations are best effort and some or most may be missing.)",
     },
     changed_language(language: Language) => {
         Language::EnglishUnitedStates => "Bot language changed to {language}",

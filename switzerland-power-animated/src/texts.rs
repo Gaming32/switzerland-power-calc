@@ -1,69 +1,21 @@
-use derive_more::with_trait::FromStr;
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use strfmt::DisplayStr;
 
-include!("../splat_lang.rs");
-
-impl AnimationLanguage {
-    pub fn name(&self) -> &'static str {
-        get_text(*self, "language_name")
-    }
-}
+include!(concat!(env!("OUT_DIR"), "/splat_lang.rs"));
 
 impl Display for AnimationLanguage {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.name())
+        f.write_str(self.language_name())
     }
 }
 
-const TEXTS_BY_LANGUAGE: phf::Map<AnimationLanguage, phf::Map<&str, &'static str>> =
-    include!(concat!(env!("OUT_DIR"), "/splat_lang.rs"));
-
-pub fn get_text(lang: AnimationLanguage, key: &'static str) -> &'static str {
-    TEXTS_BY_LANGUAGE
-        .get(&lang)
-        .unwrap()
-        .get(key)
-        .copied()
-        .unwrap_or(key)
-}
-
-pub fn format_power(lang: AnimationLanguage, key: &'static str, power: f64) -> String {
-    let power = (power * 10.0).floor().abs() as u32;
-    let integer = power / 10;
-    let fraction = power % 10;
-    get_text_fmt(
-        lang,
-        key,
-        [
-            (FmtKey::Integer, &full_width_number(integer)),
-            (FmtKey::Fraction, &full_width_number(fraction)),
-        ],
-    )
-}
-
-pub fn format_rank(lang: AnimationLanguage, rank: u32) -> String {
-    get_text_fmt(
-        lang,
-        "rank_value",
-        [(FmtKey::Rank, &full_width_number(rank))],
-    )
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, FromStr)]
-enum FmtKey {
-    Integer,
-    Fraction,
-    Rank,
-}
-
-fn get_text_fmt<const N: usize>(
-    lang: AnimationLanguage,
-    key: &'static str,
-    values: [(FmtKey, &dyn DisplayStr); N],
-) -> String {
-    strfmt::strfmt(get_text(lang, key), &HashMap::from(values)).unwrap()
+fn format_power_num(power: f64, include_negative_sign: bool) -> (String, String) {
+    let scaled_power = (power * 10.0).floor().abs() as u32;
+    let mut integer = full_width_number(scaled_power / 10);
+    let fraction = full_width_number(scaled_power % 10);
+    if include_negative_sign && power < 0.0 {
+        integer.insert(0, '-');
+    }
+    (integer, fraction)
 }
 
 /// Encodes a number into fullwidth characters

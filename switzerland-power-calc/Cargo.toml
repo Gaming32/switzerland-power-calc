@@ -12,7 +12,7 @@ thiserror.workspace = true
 rustyline = { version = "16.0.0", default-features = false, features = ["derive"] }
 strsim = "0.11.1"
 trie-rs = "0.4.2"
-hashlink = "0.10.0"
+hashlink.workspace = true
 ansi_term = "0.12.1"
 totally-ordered = "0.2.0"
 itertools.workspace = true
