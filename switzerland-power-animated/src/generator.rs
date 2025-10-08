@@ -298,7 +298,7 @@ impl AnimationGenerator {
             &power_value_text,
             old_power,
             new_power,
-            |distance| distance.powf(0.1).max(distance / 180.0),
+            |distance| distance.powf(0.1).clamp(distance / 180.0, distance / 60.0),
             |power| lang.power_value(power),
             30,
         )?;
