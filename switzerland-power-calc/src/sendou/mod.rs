@@ -528,22 +528,30 @@ async fn run_tournament(
 
     let new_players = loop {
         let tournament = get_tournament().await?;
-        let swiss_round_ids = {
-            let swiss_stage = tournament
+        let (swiss_round_ids, swiss_round_count) = {
+            let (swiss_stage, round_count) = tournament
                 .data
                 .stages
                 .iter()
-                .find(|x| matches!(x.settings, TournamentStageSettings::Swiss {}))
-                .unwrap()
-                .id;
-            tournament
-                .data
-                .rounds
-                .iter()
-                .filter(|x| x.stage_id == swiss_stage)
-                .sorted_by_key(|x| x.number)
-                .map(|x| x.id)
-                .collect_vec()
+                .find_map(|x| {
+                    if let TournamentStageSettings::Swiss { round_count } = x.settings {
+                        Some((x.id, round_count))
+                    } else {
+                        None
+                    }
+                })
+                .unwrap();
+            (
+                tournament
+                    .data
+                    .rounds
+                    .iter()
+                    .filter(|x| x.stage_id == swiss_stage)
+                    .sorted_by_key(|x| x.number)
+                    .map(|x| (x.id, x.number))
+                    .collect_vec(),
+                round_count,
+            )
         };
 
         let mut new_players = players.clone();
@@ -553,9 +561,9 @@ async fn run_tournament(
                 continue;
             }
 
-            let calc_index = swiss_round_ids
+            let calc_round = swiss_round_ids
                 .iter()
-                .position(|x| *x == tourney_match.round_id);
+                .find_map(|(id, number)| (*id == tourney_match.round_id).then_some(*number));
             let get_player = |opponent: &Option<TournamentMatchOpponent>| {
                 teams
                     .get(&opponent.unwrap().id.expect("Null opponent in ready match"))
@@ -586,8 +594,8 @@ async fn run_tournament(
                     &animation_generator,
                     team,
                     None,
-                    calc_index,
-                    swiss_round_ids.len(),
+                    calc_round,
+                    swiss_round_count,
                     player,
                     opponent.unwrap(),
                     rating,
@@ -653,8 +661,8 @@ async fn run_tournament(
                     &animation_generator,
                     team,
                     Some(other_team),
-                    calc_index,
-                    swiss_round_ids.len(),
+                    calc_round,
+                    swiss_round_count,
                     &player.name,
                     opponent.unwrap(),
                     old_player.rating,
@@ -720,8 +728,8 @@ fn send_progress_message_to_player(
     animation_generator: &AsyncAnimationGenerator,
     team: &TournamentTeam,
     other_team: Option<&TournamentTeam>,
-    calc_index: Option<usize>,
-    swiss_round_count: usize,
+    calc_round: Option<u32>,
+    swiss_round_count: u32,
     player_name: &String,
     my_result: TournamentMatchOpponent,
     old_rating: Glicko2Rating,
@@ -734,17 +742,17 @@ fn send_progress_message_to_player(
         return Ok(());
     };
 
-    let mut power_status = if let Some(calc_index) = calc_index
+    let mut power_status = if let Some(calc_round) = calc_round
         && !original_players.contains_key(player_name)
     {
-        if calc_index + 1 < swiss_round_count {
+        if calc_round + 1 < swiss_round_count {
             PowerStatus::Calculating {
-                progress: (calc_index + 1) as u32,
-                total: swiss_round_count as u32,
+                progress: calc_round,
+                total: swiss_round_count,
             }
         } else {
             PowerStatus::Calculated {
-                calculation_rounds: swiss_round_count as u32,
+                calculation_rounds: swiss_round_count,
                 power: new_rating.rating,
                 rank: new_rank,
             }

@@ -39,12 +39,17 @@ pub struct TournamentStage {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
-#[serde(tag = "type", content = "settings", rename_all = "snake_case")]
+#[serde(
+    tag = "type",
+    content = "settings",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase"
+)]
 pub enum TournamentStageSettings {
     SingleElimination {},
     DoubleElimination {},
     RoundRobin {},
-    Swiss {},
+    Swiss { round_count: u32 },
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
