@@ -10,7 +10,7 @@ use crate::sendou::lang::{CommandIdDisplay, Language};
 use crate::sendou::schema::{
     MatchRoot, SendouId, TournamentContext, TournamentData, TournamentMatch,
     TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus, TournamentRoot,
-    TournamentStageSettings, TournamentTeam,
+    TournamentStageSettings, TournamentStageSwissSettings, TournamentTeam,
 };
 use crate::sendou::types::{
     DescendingRatingGlicko2, DiscordChannelsMap, GetTournamentFn, TeamsMap,
@@ -534,7 +534,10 @@ async fn run_tournament(
                 .stages
                 .iter()
                 .find_map(|x| {
-                    if let TournamentStageSettings::Swiss { round_count } = x.settings {
+                    if let TournamentStageSettings::Swiss {
+                        swiss: TournamentStageSwissSettings { round_count },
+                    } = x.settings
+                    {
                         Some((x.id, round_count))
                     } else {
                         None
