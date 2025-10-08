@@ -1,6 +1,6 @@
 use crate::Result;
 use crate::sendou::schema::{SendouId, Tournament, TournamentTeam};
-use serenity::all::GuildChannel;
+use serenity::all::ChannelId;
 use skillratings::glicko2::Glicko2Rating;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ pub type TeamsMap<'a> = HashMap<SendouId, (&'a TournamentTeam, String)>;
 pub trait GetTournamentFn: AsyncFn() -> Result<Tournament> {}
 impl<F> GetTournamentFn for F where F: AsyncFn() -> Result<Tournament> {}
 
-pub type DiscordChannelsMap = HashMap<SendouId, GuildChannel>;
+pub type DiscordChannelsMap = HashMap<SendouId, ChannelId>;
 
 #[derive(Copy, Clone)]
 pub struct DescendingRatingGlicko2(pub Glicko2Rating);
