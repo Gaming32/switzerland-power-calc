@@ -5,7 +5,6 @@ use crate::animation::{AnimationSet, AnimationSetElement, AnimationTrack, Keyfra
 use crate::font::FontSet;
 use crate::generator::{HEIGHT, SWITZERLAND_COLOR, WIDTH};
 use crate::layout::{BuiltPane, ExtraBehavior, Pane, PaneContents, TextPaneContents};
-use sdl2::gfx::primitives::DrawRenderer;
 use sdl2::rect::Rect;
 use sdl2::render::BlendMode;
 use std::rc::Rc;
@@ -20,24 +19,6 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                     "images/calc-rank-background.png"
                 ))?,
                 contents_blending: BlendMode::None,
-                ..Pane::EMPTY
-            }
-            .build(),
-            Pane {
-                rect: Rect::new(0, 2, 811, 10),
-                contents: PaneContents::Custom(|canvas, rect, alpha| {
-                    for i in 0..101 {
-                        let x = rect.x + i * 8;
-                        // WARNING: filled_circle takes in ABGR instead of RGBA
-                        canvas.filled_circle(
-                            x as i16 + 4,
-                            rect.y as i16 + 4,
-                            2,
-                            (alpha / 4, 255, 255, 255),
-                        )?;
-                    }
-                    Ok(())
-                }),
                 ..Pane::EMPTY
             }
             .build(),

@@ -211,7 +211,6 @@ pub enum PaneContents {
     Null,
     Image(Rc<RefCell<Surface<'static>>>),
     Text(TextPaneContents),
-    Custom(fn(canvas: &mut SurfaceCanvas, rect: Rect, alpha: u8) -> Result<()>),
 }
 
 impl PaneContents {
@@ -236,7 +235,6 @@ impl PaneContents {
                 let (text_width, text_height) = contents.font.size_of(&contents.text)?;
                 contents.compute_rect(text_width, text_height, viewport)
             }
-            PaneContents::Custom(_) => viewport,
         })
     }
 
@@ -283,22 +281,6 @@ impl PaneContents {
                         contents.compute_rect(from_rect.width(), from_rect.height(), viewport),
                     )?;
                 }
-            }
-            PaneContents::Custom(renderer) => {
-                let old_scale = canvas.scale();
-                canvas.set_scale(x_scale as f32, y_scale as f32)?;
-                canvas.set_blend_mode(blend_mode);
-                renderer(
-                    canvas,
-                    Rect::new(
-                        (viewport.x() as f64 / x_scale) as i32,
-                        (viewport.y() as f64 / y_scale) as i32,
-                        (viewport.width() as f64 / x_scale) as u32,
-                        (viewport.height() as f64 / y_scale) as u32,
-                    ),
-                    alpha,
-                )?;
-                canvas.set_scale(old_scale.0, old_scale.1)?;
             }
         }
         Ok(())

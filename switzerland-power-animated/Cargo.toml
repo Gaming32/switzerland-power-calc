@@ -14,12 +14,11 @@ itertools.workspace = true
 smallvec = "1.15.1"
 derive_more = { workspace = true, features = ["from_str"] }
 crossbeam-channel = "0.5.15"
-clap = { version = "4.5.48", features = ["derive"] }
 
 [dependencies.sdl2]
 version = "0.38.0"
 default-features = false
-features = ["ttf", "image", "gfx", "static-link", "use-vcpkg"]
+features = ["ttf", "image", "static-link", "use-vcpkg"]
 
 [build-dependencies]
 serde_json = "1.0.145"
@@ -28,7 +27,7 @@ hashlink.workspace = true
 parse-format = "0.1.0"
 
 [package.metadata.vcpkg]
-dependencies = ["sdl2", "sdl2-image", "sdl2-ttf", "sdl2-gfx"]
+dependencies = ["sdl2", "sdl2-image", "sdl2-ttf"]
 git = "https://github.com/microsoft/vcpkg"
 rev = "2025.09.17" # release 2024.05.24 # to check for a new one, check https://github.com/microsoft/vcpkg/releases
 
