@@ -7,6 +7,7 @@ use crate::generator::{HEIGHT, WIDTH};
 use crate::layout::{BuiltPane, Pane, PaneContents, TextPaneContents};
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
+use sdl2::render::BlendMode;
 use std::rc::Rc;
 
 pub const WIN_COLOR: Color = Color::RGB(233, 255, 0);
@@ -27,6 +28,7 @@ pub fn power_progress_pane(
                 contents: PaneContents::image_png(include_bytes!(
                     "images/power-progress-background.png"
                 ))?,
+                contents_blending: BlendMode::None,
                 ..Pane::EMPTY
             }
             .build(),

@@ -1,5 +1,5 @@
 use crate::Result;
-use crate::generator::PIXEL_FORMAT;
+use crate::surface::ScratchSurface;
 use itertools::Itertools;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
@@ -37,11 +37,29 @@ impl<'ttf> FontSet<'ttf> {
         })
     }
 
-    pub fn render<'a>(&self, color: impl Into<Color>, text: &str) -> Result<Surface<'a>> {
+    /// Renders the specified text into the specified [Surface] at 0,0 with no blending and returns
+    /// the blitted-to [Rect], if any.
+    pub fn render(
+        &self,
+        dest: &mut Surface,
+        x_scale: f64,
+        y_scale: f64,
+        color: impl Into<Color>,
+        text: &str,
+    ) -> Result<Option<Rect>> {
         Ok(match self.split_text(text)? {
-            SplitTextResult::EmptyText => Surface::new(0, 0, PIXEL_FORMAT)?,
-            SplitTextResult::SingleFont(font) => font.render(text).blended(color)?,
+            SplitTextResult::EmptyText => None,
+            SplitTextResult::SingleFont(font) => {
+                let mut result = font.render(text).blended(color)?;
+                let scaled_width = (result.width() as f64 * x_scale) as u32;
+                let scaled_height = (result.height() as f64 * y_scale) as u32;
+                Some(result.blit_smooth(dest, Rect::new(0, 0, scaled_width, scaled_height))?)
+            }
             SplitTextResult::MultipleFonts(segments, (width, height)) => {
+                let scaled_width = (width as f64 * x_scale) as u32;
+                let scaled_height = (height as f64 * y_scale) as u32;
+                let dest_rect = Rect::new(0, 0, scaled_width, scaled_height);
+
                 let color = color.into();
                 let max_ascent = segments
                     .iter()
@@ -49,23 +67,24 @@ impl<'ttf> FontSet<'ttf> {
                     .max()
                     .unwrap();
 
-                let mut result = Surface::new(width, height, PIXEL_FORMAT)?;
                 let mut cur_x = 0;
                 for (font, segment) in segments {
-                    let rendered_segment = font.render(segment).blended(color)?;
-                    rendered_segment.blit(
-                        None,
-                        &mut result,
+                    let mut segment = font.render(segment).blended(color)?;
+                    let scaled_width = (segment.width() as f64 * x_scale) as u32;
+                    let scaled_height = (segment.height() as f64 * y_scale) as u32;
+                    segment.blit_smooth(
+                        dest,
                         Rect::new(
                             cur_x,
-                            max_ascent - font.ascent(),
-                            rendered_segment.width(),
-                            rendered_segment.height(),
+                            ((max_ascent - font.ascent()) as f64 * y_scale) as i32,
+                            scaled_width,
+                            scaled_height,
                         ),
                     )?;
-                    cur_x += rendered_segment.width() as i32;
+                    cur_x += scaled_width as i32;
                 }
-                result
+
+                Some(dest_rect)
             }
         })
     }

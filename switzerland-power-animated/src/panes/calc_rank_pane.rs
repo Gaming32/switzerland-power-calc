@@ -7,6 +7,7 @@ use crate::generator::{HEIGHT, SWITZERLAND_COLOR, WIDTH};
 use crate::layout::{BuiltPane, ExtraBehavior, Pane, PaneContents, TextPaneContents};
 use sdl2::gfx::primitives::DrawRenderer;
 use sdl2::rect::Rect;
+use sdl2::render::BlendMode;
 use std::rc::Rc;
 
 pub fn calc_rank_pane(
@@ -21,6 +22,7 @@ pub fn calc_rank_pane(
                 contents: PaneContents::image_png(include_bytes!(
                     "images/calc-rank-background.png"
                 ))?,
+                contents_blending: BlendMode::None,
                 ..Pane::EMPTY
             }
             .build(),

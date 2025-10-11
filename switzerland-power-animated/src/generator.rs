@@ -71,6 +71,7 @@ impl AnimationGenerator {
 
             state: RefCell::new(GeneratorState {
                 canvas: Surface::new(WIDTH, HEIGHT, PIXEL_FORMAT)?.into_canvas()?,
+                scratch_surface: Surface::new(WIDTH, HEIGHT, PIXEL_FORMAT)?,
                 frames: vec![],
             }),
 
@@ -383,6 +384,7 @@ pub(crate) type FramesVec = Vec<(Vec<u8>, u32)>;
 
 struct GeneratorState {
     canvas: SurfaceCanvas<'static>,
+    scratch_surface: Surface<'static>,
     frames: FramesVec,
 }
 
@@ -452,7 +454,7 @@ impl GeneratorState {
 
     fn render_frame(&mut self, pane: &BuiltPane, duration_frames: u32) -> Result<()> {
         self.clear_canvas();
-        pane.render(&mut self.canvas)?;
+        pane.render(&mut self.canvas, &mut self.scratch_surface)?;
         self.push_frame(duration_frames);
         Ok(())
     }
