@@ -80,12 +80,7 @@ impl<'ttf> FontSet<'ttf> {
                     }
                     segment.blit_smooth(
                         dest,
-                        Rect::new(
-                            cur_x,
-                            ((max_ascent - font.ascent()) as f64 * y_scale) as i32,
-                            scaled_width,
-                            scaled_height,
-                        ),
+                        Rect::new(cur_x, start_y, scaled_width, scaled_height),
                     )?;
                     if scaled_height < total_scaled_height {
                         dest.fill_rect(
