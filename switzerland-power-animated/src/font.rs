@@ -55,10 +55,8 @@ impl<'ttf> FontSet<'ttf> {
                 let scaled_height = (result.height() as f64 * y_scale) as u32;
                 Some(result.blit_smooth(dest, Rect::new(0, 0, scaled_width, scaled_height))?)
             }
-            SplitTextResult::MultipleFonts(segments, (width, height)) => {
-                let scaled_width = (width as f64 * x_scale) as u32;
-                let scaled_height = (height as f64 * y_scale) as u32;
-                let dest_rect = Rect::new(0, 0, scaled_width, scaled_height);
+            SplitTextResult::MultipleFonts(segments, (_, height)) => {
+                let total_scaled_height = (height as f64 * y_scale) as u32;
 
                 let color = color.into();
                 let max_ascent = segments
@@ -69,9 +67,17 @@ impl<'ttf> FontSet<'ttf> {
 
                 let mut cur_x = 0;
                 for (font, segment) in segments {
+                    const CLEAR_COLOR: Color = Color::RGBA(0, 0, 0, 0);
                     let mut segment = font.render(segment).blended(color)?;
                     let scaled_width = (segment.width() as f64 * x_scale) as u32;
                     let scaled_height = (segment.height() as f64 * y_scale) as u32;
+                    let start_y = ((max_ascent - font.ascent()) as f64 * y_scale) as i32;
+                    if start_y > 0 {
+                        dest.fill_rect(
+                            Rect::new(cur_x, 0, scaled_width, start_y as u32),
+                            CLEAR_COLOR,
+                        )?;
+                    }
                     segment.blit_smooth(
                         dest,
                         Rect::new(
@@ -81,10 +87,21 @@ impl<'ttf> FontSet<'ttf> {
                             scaled_height,
                         ),
                     )?;
+                    if scaled_height < total_scaled_height {
+                        dest.fill_rect(
+                            Rect::new(
+                                cur_x,
+                                start_y + scaled_height as i32,
+                                scaled_width,
+                                total_scaled_height - scaled_height,
+                            ),
+                            CLEAR_COLOR,
+                        )?;
+                    }
                     cur_x += scaled_width as i32;
                 }
 
-                Some(dest_rect)
+                Some(Rect::new(0, 0, cur_x as u32, total_scaled_height))
             }
         })
     }
