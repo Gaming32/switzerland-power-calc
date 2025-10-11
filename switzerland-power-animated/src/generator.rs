@@ -1,6 +1,6 @@
 use crate::animation::AnimationSet;
 use crate::font::FontSet;
-use crate::layout::{BuiltPane, PaneContents};
+use crate::layout::BuiltPane;
 use crate::panes::{calc_rank_pane, power_progress_pane};
 use crate::status::SetScore;
 use crate::texts::AnimationLanguage;
@@ -64,8 +64,6 @@ impl AnimationGenerator {
         let bold_font = Rc::new(load_font!(80, "BlitzBold.otf", "FOT-RowdyStd-EB.otf"));
         let bold_font_small = Rc::new(load_font!(36, "BlitzBold.otf", "FOT-RowdyStd-EB.otf"));
 
-        let swiss_flag = PaneContents::image_png(include_bytes!("panes/images/swiss-flag.png"))?;
-
         Ok(Self {
             webp_config,
 
@@ -75,11 +73,10 @@ impl AnimationGenerator {
                 frames: vec![],
             }),
 
-            calc_rank_pane: calc_rank_pane::calc_rank_pane(bold_font.clone(), swiss_flag.clone())?,
+            calc_rank_pane: calc_rank_pane::calc_rank_pane(bold_font.clone())?,
             power_progress_pane: power_progress_pane::power_progress_pane(
                 bold_font.clone(),
                 bold_font_small.clone(),
-                swiss_flag.clone(),
             )?,
 
             _sdl: sdl,

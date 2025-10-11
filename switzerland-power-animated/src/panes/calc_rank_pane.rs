@@ -10,10 +10,7 @@ use sdl2::rect::Rect;
 use sdl2::render::BlendMode;
 use std::rc::Rc;
 
-pub fn calc_rank_pane(
-    bold_font: Rc<FontSet<'static>>,
-    swiss_flag: PaneContents,
-) -> Result<BuiltPane> {
+pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
     Ok(Pane {
         rect: Rect::new(0, 0, WIDTH, HEIGHT),
         children: vec![
@@ -23,12 +20,6 @@ pub fn calc_rank_pane(
                     "images/calc-rank-background.png"
                 ))?,
                 contents_blending: BlendMode::None,
-                ..Pane::EMPTY
-            }
-            .build(),
-            Pane {
-                rect: Rect::new(0, 190, 68, 68),
-                contents: swiss_flag,
                 ..Pane::EMPTY
             }
             .build(),

@@ -16,7 +16,6 @@ pub const LOSE_COLOR: Color = Color::RGB(43, 24, 255);
 pub fn power_progress_pane(
     bold_font: Rc<FontSet<'static>>,
     bold_font_small: Rc<FontSet<'static>>,
-    swiss_flag: PaneContents,
 ) -> Result<BuiltPane> {
     let win_lose_background =
         PaneContents::image_png(include_bytes!("images/win-lose-background.png"))?;
@@ -29,12 +28,6 @@ pub fn power_progress_pane(
                     "images/power-progress-background.png"
                 ))?,
                 contents_blending: BlendMode::None,
-                ..Pane::EMPTY
-            }
-            .build(),
-            Pane {
-                rect: Rect::new(0, 264, 68, 68),
-                contents: swiss_flag,
                 ..Pane::EMPTY
             }
             .build(),
