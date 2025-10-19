@@ -10,7 +10,7 @@ pub enum Error {
     #[error("JSON Serialization error: {0}")]
     JsonSerialization(#[from] serde_json::Error),
     #[error("CLI error: {0}")]
-    Readline(#[from] rustyline::error::ReadlineError),
+    Readline(#[from] rustyline_async::ReadlineError),
     #[error("Missing environment variable {0}")]
     MissingEnv(String),
     #[error("Invalid environment variable {0}: {1}")]

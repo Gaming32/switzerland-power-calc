@@ -117,7 +117,6 @@ pub struct TournamentContext {
 #[serde(rename_all = "camelCase")]
 pub struct TournamentTeam {
     pub id: SendouId,
-    pub name: String,
     pub members: Vec<TournamentTeamMember>,
     pub check_ins: Vec<TournamentTeamCheckIn>,
 }
@@ -125,11 +124,10 @@ pub struct TournamentTeam {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TournamentTeamMember {
+    pub user_id: SendouId,
     pub username: String,
     pub discord_id: serenity::all::UserId,
-    pub custom_url: Option<String>,
     pub country: String,
-    pub in_game_name: String,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
@@ -144,4 +142,15 @@ pub struct MatchRoot {
 #[serde(rename_all = "camelCase")]
 pub struct MatchResult {
     pub winner_team_id: SendouId,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SendouUserRoot {
+    pub user: SendouUser,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SendouUser {
+    pub id: SendouId,
+    pub username: String,
 }

@@ -1,16 +1,16 @@
 mod discord;
 pub mod lang;
+mod migration;
 mod schema;
 mod types;
 
-use crate::cli_helpers::{TrieHinter, print_seeding_instructions};
-use crate::db::{Database, SwitzerlandPlayer, SwitzerlandPlayerMap};
+use crate::db::{Database, PlayerId, SwitzerlandPlayer, SwitzerlandPlayerMap};
 use crate::sendou::discord::{DiscordEventHandler, DiscordHttp};
 use crate::sendou::lang::{CommandIdDisplay, Language};
 use crate::sendou::schema::{
-    MatchRoot, SendouId, TournamentContext, TournamentData, TournamentMatch,
-    TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus, TournamentRoot,
-    TournamentStageSettings, TournamentStageSwissSettings, TournamentTeam,
+    MatchRoot, TournamentContext, TournamentData, TournamentMatch, TournamentMatchOpponent,
+    TournamentMatchResult, TournamentMatchStatus, TournamentRoot, TournamentStageSettings,
+    TournamentStageSwissSettings, TournamentTeam,
 };
 use crate::sendou::types::{
     DescendingRatingGlicko2, DiscordChannelsMap, GetTournamentFn, TeamsMap,
@@ -18,13 +18,11 @@ use crate::sendou::types::{
 use crate::{
     Error, Result, format_player_rank_summary, format_player_simply, summarize_differences,
 };
-use ansi_term::Color;
 use chrono::Utc;
 use dashmap::DashMap;
 use itertools::Itertools;
 use reqwest::{Client as ReqwestClient, Url};
-use rustyline::history::DefaultHistory;
-use rustyline::{DefaultEditor, Editor, ExternalPrinter};
+use rustyline_async::{Readline, ReadlineError, ReadlineEvent};
 use serenity::FutureExt;
 use serenity::all::{
     ActivityData, CacheHttp, Channel, ChannelId, ChannelType, CommandId, CommandOptionType,
@@ -35,18 +33,22 @@ use serenity::all::{
 use skillratings::Outcomes;
 use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2};
 use std::collections::{HashMap, HashSet};
-use std::fmt::Write;
-use std::fs;
-use std::io::Read;
+use std::fmt::Write as FmtWrite;
+use std::io::{Read, Write as IoWrite};
 use std::path::Path;
+use std::process::exit;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
+use std::{fs, io};
 use switzerland_power_animated::{AsyncAnimationGenerator, MatchOutcome, PowerStatus};
 use tokio::sync::oneshot;
-use tokio::time::sleep;
-use trie_rs::Trie;
+use tokio::time;
+use tokio::time::{MissedTickBehavior, sleep};
 use unic_emoji_char::{is_emoji, is_emoji_component};
+
+pub use migration::sendou_migration_cli;
+pub use schema::SendouId;
 
 #[tokio::main]
 pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Result<()> {
@@ -132,7 +134,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
     let old_players = Database::read(in_db)?.into_map();
     let mut new_players = old_players.clone();
 
-    let teams = initialize_teams(&tournament_context, &old_players, &mut new_players)?;
+    let teams = initialize_teams(&tournament_context, &mut new_players);
     wait_for_tournament_start(&tournament_context, &get_tournament).await?;
 
     let language_command = create_language_command();
@@ -156,7 +158,6 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         language_command_id,
         &get_tournament,
         &mut new_players,
-        &teams,
     )
     .await?;
 
@@ -185,7 +186,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
     .await?;
 
     println!("Press enter when finished to clean up Discord channels");
-    let _ = std::io::stdin().read(&mut [0]);
+    let _ = io::stdin().read(&mut [0]);
     clean_up_discord_channels(&discord_http, discord_channels.into_values()).await;
 
     get_guild()?
@@ -195,18 +196,19 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
 
     let new_user_languages = teams
         .values()
-        .filter_map(|(team, player)| {
+        .filter_map(|team| {
+            let player = team.members.first().unwrap();
             discord_user_languages
-                .get(&team.members.first().unwrap().discord_id)
+                .get(&player.discord_id)
                 .as_deref()
                 .copied()
-                .map(|lang| (player.clone(), lang))
+                .map(|lang| (player.user_id, lang))
         })
         .collect::<HashMap<_, _>>();
     if !new_user_languages.is_empty() {
         let mut new_db = new_db;
         for user in &mut new_db.players {
-            if let Some(new_language) = new_user_languages.get(&user.name) {
+            if let Some(new_language) = new_user_languages.get(&user.id.unwrap_sendou()) {
                 user.language = Some(*new_language);
             }
         }
@@ -231,63 +233,21 @@ where
 
 fn initialize_teams<'a>(
     tournament_context: &'a TournamentContext,
-    old_players: &SwitzerlandPlayerMap,
     new_players: &mut SwitzerlandPlayerMap,
-) -> Result<TeamsMap<'a>> {
-    let mut rl = Editor::<TrieHinter, DefaultHistory>::new()?;
+) -> TeamsMap<'a> {
     let mut teams = HashMap::new();
-    println!(
-        "{}",
-        Color::Green.paint(format!(
-            "Found {} players. Please enter their seeding names as requested.",
-            tournament_context.teams.len()
-        ))
-    );
-    rl.set_helper(Some(TrieHinter {
-        trie: Trie::from_iter(old_players.keys()),
-        enabled: true,
-    }));
     for team in &tournament_context.teams {
         let player = team.members.first().expect("Sendou team has no members");
-        println!("Team:       {}", team.name);
-        println!("IGN:        {}", player.in_game_name);
-        println!("Sendou:     {}", player.username);
-        println!(
-            "Sendou URL: https://sendou.ink/u/{}",
-            player
-                .custom_url
-                .as_ref()
-                .unwrap_or(&player.discord_id.to_string())
-        );
-        loop {
-            let seeding_name = rl.readline("seeding name> ")?;
-            if seeding_name.is_empty() {
-                println!("{}", Color::Red.paint("Please enter a name"));
-                continue;
-            }
-            teams.insert(team.id, (team, seeding_name.clone()));
-            new_players
-                .entry(seeding_name.clone())
-                .or_insert_with(|| SwitzerlandPlayer {
-                    name: seeding_name,
-                    ..Default::default()
-                });
-            break;
-        }
-        println!();
+        teams.insert(team.id, team);
+        new_players
+            .entry(PlayerId::Sendou(player.user_id))
+            .or_insert_with(|| SwitzerlandPlayer {
+                id: PlayerId::Sendou(player.user_id),
+                display_name: Some(player.username.clone()),
+                ..Default::default()
+            });
     }
-
-    print_seeding_instructions(old_players, teams.values(), |team, player| {
-        format!(
-            "{} ({}) [{} @ {:.1} SP]",
-            team.name,
-            team.members.first().unwrap().username,
-            player.name,
-            player.rating.rating
-        )
-    });
-
-    Ok(teams)
+    teams
 }
 
 async fn wait_for_tournament_start(
@@ -368,7 +328,6 @@ async fn create_discord_channels(
     language_command_id: CommandId,
     get_tournament: &impl GetTournamentFn,
     players: &mut SwitzerlandPlayerMap,
-    teams: &TeamsMap<'_>,
 ) -> Result<DiscordChannelsMap> {
     println!("Creating Discord channels...");
 
@@ -382,7 +341,7 @@ async fn create_discord_channels(
         }
         let player = team.members.first().unwrap();
 
-        let switzerland_player = players.get_mut(&teams.get(&team.id).unwrap().1).unwrap();
+        let switzerland_player = players.get_mut(&PlayerId::Sendou(player.user_id)).unwrap();
         let guess_language = switzerland_player.language.is_none();
         let language = switzerland_player.language.get_or_insert_with(|| {
             Language::guess_from_country(&player.country).unwrap_or_default()
@@ -453,69 +412,72 @@ async fn run_tournament(
     get_tournament: &impl GetTournamentFn,
 ) -> Result<()> {
     enum Action {
-        Poll,
+        Poll(bool),
         SkipMatch(SendouId),
-        Error(Error),
+        Error(io::Error),
+        Quit,
     }
     let (action_send, mut action_recv) = tokio::sync::mpsc::unbounded_channel();
-    let mut rl = DefaultEditor::new()?;
-    let mut printer = rl.create_external_printer()?;
-    std::thread::spawn(move || {
-        let mut run = || -> Result<()> {
-            loop {
-                let line = rl.readline("command> ")?;
-                let action = if line == "help" || line == "?" {
-                    println!("help");
-                    println!("   Prints this message");
-                    println!("?");
-                    println!("   Prints this message");
-                    println!("skip <match-id>");
-                    println!("   Ignores the specified match");
-                    println!("poll");
-                    println!("   Forces a recheck of sendou.ink");
-                    None
-                } else if line.starts_with("skip ") {
-                    line.strip_prefix("skip ").unwrap().parse().map_or_else(
-                        |err| {
-                            println!("Invalid match ID: {err}");
-                            None
-                        },
-                        |id| {
-                            println!("Ignoring match {id}");
-                            Some(Action::SkipMatch(id))
-                        },
-                    )
-                } else if line == "poll" {
-                    println!("Polling now");
-                    Some(Action::Poll)
-                } else {
-                    println!("Unknown or invalid command: {line}");
-                    println!("Type 'help' or '?' to see a list of commands");
-                    None
-                };
-                if let Some(action) = action
-                    && action_send.send(action).is_err()
-                {
-                    break;
+    let (mut rl, mut printer) = Readline::new("command> ".to_string())?;
+    {
+        let mut printer = printer.clone();
+        tokio::task::spawn(async move {
+            let mut run = async || -> io::Result<()> {
+                loop {
+                    let line = match rl.readline().await {
+                        Ok(ReadlineEvent::Line(line)) => line,
+                        Ok(ReadlineEvent::Eof) => break,
+                        Ok(ReadlineEvent::Interrupted) => {
+                            let _ = action_send.send(Action::Quit);
+                            break;
+                        }
+                        Err(ReadlineError::IO(err)) => return Err(err),
+                        Err(ReadlineError::Closed) => break,
+                    };
+                    let action = if line == "help" || line == "?" {
+                        writeln!(printer, "help")?;
+                        writeln!(printer, "   Prints this message")?;
+                        writeln!(printer, "?")?;
+                        writeln!(printer, "   Prints this message")?;
+                        writeln!(printer, "skip <match-id>")?;
+                        writeln!(printer, "   Ignores the specified match")?;
+                        writeln!(printer, "poll")?;
+                        writeln!(printer, "   Forces a recheck of sendou.ink")?;
+                        None
+                    } else if line.starts_with("skip ") {
+                        match line.strip_prefix("skip ").unwrap().parse() {
+                            Ok(id) => Some(Action::SkipMatch(id)),
+                            Err(err) => {
+                                writeln!(printer, "Invalid match ID: {err}")?;
+                                None
+                            }
+                        }
+                    } else if line == "poll" {
+                        Some(Action::Poll(true))
+                    } else {
+                        writeln!(printer, "Unknown or invalid command: {line}")?;
+                        writeln!(printer, "Type 'help' or '?' to see a list of commands")?;
+                        None
+                    };
+                    if let Some(action) = action
+                        && action_send.send(action).is_err()
+                    {
+                        break;
+                    }
                 }
+                Ok(())
+            };
+            if let Err(err) = run().await {
+                let _ = action_send.send(Action::Error(err));
             }
-            Ok(())
-        };
-        if let Err(err) = run() {
-            let _ = action_send.send(Action::Error(err));
-        }
-    });
-
-    macro_rules! rl_print {
-        () => { printer.print("".to_string()) };
-        ($($args:tt)*) => { printer.print(format!($($args)*)) };
+        });
     }
 
     let mut completed_matches = HashSet::new();
     let mut ignored_matches = HashSet::new();
     let mut old_ranks = players
         .values()
-        .filter_map(|x| Some((x.name.clone(), x.rank?.get())))
+        .filter_map(|x| Some((x.id.clone(), x.rank?.get())))
         .collect::<HashMap<_, _>>();
     let mut ranked_players = players
         .values()
@@ -526,6 +488,8 @@ async fn run_tournament(
 
     let animation_generator = AsyncAnimationGenerator::new().await?;
 
+    let mut interval = time::interval(Duration::from_secs(30));
+    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let new_players = loop {
         let tournament = get_tournament().await?;
         let (swiss_round_ids, swiss_round_count) = {
@@ -570,9 +534,10 @@ async fn run_tournament(
             let get_player = |opponent: &Option<TournamentMatchOpponent>| {
                 teams
                     .get(&opponent.unwrap().id.expect("Null opponent in ready match"))
-                    .and_then(|(team, player_name)| {
-                        let player = new_players.get(player_name)?;
-                        Some((team, player_name, player.rating, player.language.unwrap()))
+                    .and_then(|team| {
+                        let player_id = PlayerId::Sendou(team.members.first().unwrap().user_id);
+                        let player = new_players.get(&player_id)?;
+                        Some((team, player_id, player.rating, player.language.unwrap()))
                     })
                     .unwrap()
             };
@@ -585,7 +550,7 @@ async fn run_tournament(
                 }
                 let opponent = tourney_match.opponent1.or(tourney_match.opponent2);
                 let (team, player, rating, language) = get_player(&opponent);
-                let rank = old_ranks.get(player).copied();
+                let rank = old_ranks.get(&player).copied();
                 send_progress_message_to_player(
                     http_client,
                     http,
@@ -599,7 +564,7 @@ async fn run_tournament(
                     None,
                     calc_round,
                     swiss_round_count,
-                    player,
+                    &player,
                     opponent.unwrap(),
                     rating,
                     rating,
@@ -626,7 +591,7 @@ async fn run_tournament(
                 &Glicko2Config::default(),
             );
             if new_match {
-                rl_print!("In match {}:", tourney_match.id)?;
+                writeln!(printer, "In match {}:", tourney_match.id)?;
             }
             let mut update_player = async |opponent: Option<TournamentMatchOpponent>,
                                            team: &TournamentTeam,
@@ -647,9 +612,10 @@ async fn run_tournament(
                 let new_rank =
                     ranked_players.rank(&DescendingRatingGlicko2(player.rating)) as u32 + 1;
                 ranked_players.insert(DescendingRatingGlicko2(player.rating));
-                let old_rank = old_ranks.insert(player.name.clone(), new_rank);
+                let old_rank = old_ranks.insert(player.id.clone(), new_rank);
 
-                rl_print!(
+                writeln!(
+                    printer,
                     "  {}",
                     format_player_simply(Some(&old_player), player, false)
                 )?;
@@ -666,7 +632,7 @@ async fn run_tournament(
                     Some(other_team),
                     calc_round,
                     swiss_round_count,
-                    &player.name,
+                    &player.id,
                     opponent.unwrap(),
                     old_player.rating,
                     player.rating,
@@ -680,7 +646,7 @@ async fn run_tournament(
                 tourney_match.opponent1,
                 team1,
                 team2,
-                player1,
+                &player1,
                 new_rating1,
                 language1,
             )
@@ -689,7 +655,7 @@ async fn run_tournament(
                 tourney_match.opponent2,
                 team2,
                 team1,
-                player2,
+                &player2,
                 new_rating2,
                 language2,
             )
@@ -702,15 +668,25 @@ async fn run_tournament(
 
         loop {
             let action = tokio::select! {
-                _ = sleep(Duration::from_secs(30)) => Action::Poll,
+                _ = interval.tick() => Action::Poll(false),
                 action = action_recv.recv() => action.expect("Action input thread exited unexpectedly without Error"),
             };
             match action {
-                Action::Poll => break,
+                Action::Poll(forced) => {
+                    if forced {
+                        writeln!(printer, "Polling now")?;
+                    }
+                    break;
+                }
                 Action::SkipMatch(id) => {
                     ignored_matches.insert(id);
+                    writeln!(printer, "Ignoring match {id}")?;
                 }
-                Action::Error(err) => return Err(err),
+                Action::Error(err) => return Err(err.into()),
+                Action::Quit => {
+                    writeln!(printer, "Force quitting now")?;
+                    exit(1);
+                }
             }
         }
     };
@@ -733,7 +709,7 @@ fn send_progress_message_to_player(
     other_team: Option<&TournamentTeam>,
     calc_round: Option<u32>,
     swiss_round_count: u32,
-    player_name: &String,
+    player_id: &PlayerId,
     my_result: TournamentMatchOpponent,
     old_rating: Glicko2Rating,
     new_rating: Glicko2Rating,
@@ -746,7 +722,7 @@ fn send_progress_message_to_player(
     };
 
     let mut power_status = if let Some(calc_round) = calc_round
-        && !original_players.contains_key(player_name)
+        && !original_players.contains_key(player_id)
     {
         if calc_round + 1 < swiss_round_count {
             PowerStatus::Calculating {
@@ -883,14 +859,15 @@ async fn send_summary_to_discord(
 ) -> Result<()> {
     println!("\nSending comparison to Discord...");
     let tournament = get_tournament().await?;
-    let player_name_to_discord_id = teams
+    let player_id_to_discord_id = teams
         .values()
-        .filter(|(team, _)| !team.check_ins.is_empty())
-        .map(|(team, name)| (name, team.members.first().unwrap().discord_id))
+        .filter(|team| !team.check_ins.is_empty())
+        .map(|team| team.members.first().unwrap())
+        .map(|player| (PlayerId::Sendou(player.user_id), player.discord_id))
         .collect::<HashMap<_, _>>();
 
     let mut players_in_discord = HashSet::new();
-    for user_id in player_name_to_discord_id.values().copied() {
+    for user_id in player_id_to_discord_id.values().copied() {
         if matches!(
             guild.member(http, user_id).await,
             Ok(_)
@@ -948,13 +925,13 @@ async fn send_summary_to_discord(
 
     let _ = writeln!(message, "## Switzerland Power changes");
     for new_player in &new_db.players {
-        let Some(discord_id) = player_name_to_discord_id.get(&new_player.name) else {
+        let Some(discord_id) = player_id_to_discord_id.get(&new_player.id) else {
             continue;
         };
         if !players_in_discord.contains(discord_id) {
             continue;
         }
-        let old_result = old_players.get(&new_player.name);
+        let old_result = old_players.get(&new_player.id);
         if let Some(old_result) = old_result
             && old_result.rating == new_player.rating
         {

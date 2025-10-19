@@ -1,12 +1,9 @@
-mod cli_helpers;
 mod db;
 mod error;
 mod sendou;
-mod tourney;
 
-use crate::db::SwitzerlandPlayer;
-use crate::sendou::sendou_cli;
-use crate::tourney::tourney_cli;
+use crate::db::{SwitzerlandPlayer, SwitzerlandPlayerMap};
+use crate::sendou::{sendou_cli, sendou_migration_cli};
 use clap::Parser;
 use error::{Error, Result};
 use hashlink::LinkedHashMap;
@@ -53,13 +50,6 @@ enum Commands {
         /// The users to query. If none specified, query all
         query: Option<Vec<String>>,
     },
-    /// Run a tournament
-    Tourney {
-        /// The path to the input database
-        in_db: PathBuf,
-        /// The path to the database to create as a result
-        out_db: PathBuf,
-    },
     /// Automatically process a tournament being run on sendou.ink
     Sendou {
         /// The path to the input database
@@ -68,6 +58,15 @@ enum Commands {
         out_db: PathBuf,
         /// The URL to the tournament on sendou.ink
         tournament_url: String,
+    },
+    /// Migrate old string IDs to new Sendou-based IDs
+    MigrateNames {
+        /// The path to the input database
+        in_db: PathBuf,
+        /// The path to the database to create as a result
+        out_db: PathBuf,
+        /// The users to migrate. If none specified, query all
+        query: Option<Vec<String>>,
     },
     /// Generate an animation
     Animate {
@@ -210,7 +209,7 @@ fn run(args: Args) -> Result<()> {
             println!("Initialized DB at {}", db.display());
         }
         Query { db, query, verbose } => {
-            let results = db::query(&db, query.as_ref())?;
+            let results = db::query(&db, query.as_ref(), true)?;
             println!("Found {} players:", results.len());
             for player in results {
                 if !verbose {
@@ -219,7 +218,7 @@ fn run(args: Args) -> Result<()> {
                     println!(
                         "  #{} {}: {:?}",
                         player.unwrap_rank(),
-                        player.name,
+                        player.display_name(),
                         player.rating
                     );
                 }
@@ -230,20 +229,24 @@ fn run(args: Args) -> Result<()> {
             new_db,
             query,
         } => {
-            let old_results = db::query(&old_db, None)?
+            let old_results = db::query(&old_db, None, true)?
                 .into_iter()
-                .map(|x| (x.name.clone(), x))
+                .map(|x| (x.id.clone(), x))
                 .collect::<LinkedHashMap<_, _>>();
-            let new_results = db::query(&new_db, query.as_ref())?;
+            let new_results = db::query(&new_db, query.as_ref(), true)?;
             println!("Found {} players:", new_results.len());
             summarize_differences(&old_results, &new_results);
         }
-        Tourney { in_db, out_db } => tourney_cli(&in_db, &out_db)?,
         Sendou {
             in_db,
             out_db,
             tournament_url,
         } => sendou_cli(&in_db, &out_db, &tournament_url)?,
+        MigrateNames {
+            in_db,
+            out_db,
+            query,
+        } => sendou_migration_cli(&in_db, &out_db, query.as_ref())?,
         Animate {
             quality,
             lossless,
@@ -274,11 +277,11 @@ fn run(args: Args) -> Result<()> {
 }
 
 pub fn summarize_differences(
-    old_results: &LinkedHashMap<String, SwitzerlandPlayer>,
+    old_results: &SwitzerlandPlayerMap,
     new_results: &Vec<SwitzerlandPlayer>,
 ) {
     for new_player in new_results {
-        let old_result = old_results.get(&new_player.name);
+        let old_result = old_results.get(&new_player.id);
         if let Some(old_result) = old_result
             && old_result.rating == new_player.rating
         {
@@ -306,7 +309,7 @@ pub fn format_player_simply(
 ) -> String {
     format!(
         "- {}: {}",
-        new_player.name,
+        new_player.display_name(),
         format_player_rank_summary(old_player, new_player, show_rank)
     )
 }

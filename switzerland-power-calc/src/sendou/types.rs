@@ -5,7 +5,7 @@ use skillratings::glicko2::Glicko2Rating;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
-pub type TeamsMap<'a> = HashMap<SendouId, (&'a TournamentTeam, String)>;
+pub type TeamsMap<'a> = HashMap<SendouId, &'a TournamentTeam>;
 
 pub trait GetTournamentFn: AsyncFn() -> Result<Tournament> {}
 impl<F> GetTournamentFn for F where F: AsyncFn() -> Result<Tournament> {}

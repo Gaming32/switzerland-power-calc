@@ -9,14 +9,11 @@ skillratings = { version = "0.27.1", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_cbor = "0.11.2"
 thiserror.workspace = true
-rustyline = { version = "16.0.0", default-features = false, features = ["derive"] }
 strsim = "0.11.1"
-trie-rs = "0.4.2"
 hashlink.workspace = true
 ansi_term = "0.12.1"
 totally-ordered = "0.2.0"
 itertools.workspace = true
-
 tokio.workspace = true
 reqwest = { version = "0.11.27", features = ["json"] }
 url = "2.5.7"
@@ -32,3 +29,4 @@ unic-emoji-char = "0.9.0"
 dashmap = "6.1.0"
 derive_more = { workspace = true, features = ["display"] }
 switzerland-power-animated = { path = "../switzerland-power-animated" }
+rustyline-async = "0.4.7"
