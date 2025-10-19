@@ -50,7 +50,10 @@ pub async fn sendou_migration_cli(
             }
             match request_player_info(&client, player_slug).await {
                 Ok(user) => {
-                    println!("Found player '{}' with ID {}", user.user.username, user.user.id);
+                    println!(
+                        "Found player '{}' with ID {}",
+                        user.user.username, user.user.id
+                    );
                     break Some(user.user);
                 }
                 Err(e) => println!(

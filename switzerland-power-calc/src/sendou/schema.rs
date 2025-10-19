@@ -117,6 +117,7 @@ pub struct TournamentContext {
 #[serde(rename_all = "camelCase")]
 pub struct TournamentTeam {
     pub id: SendouId,
+    pub name: String,
     pub members: Vec<TournamentTeamMember>,
     pub check_ins: Vec<TournamentTeamCheckIn>,
 }

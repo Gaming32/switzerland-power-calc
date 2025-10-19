@@ -1,3 +1,4 @@
+mod cli_helpers;
 mod discord;
 pub mod lang;
 mod migration;
@@ -47,6 +48,7 @@ use tokio::time;
 use tokio::time::{MissedTickBehavior, sleep};
 use unic_emoji_char::{is_emoji, is_emoji_component};
 
+use crate::sendou::cli_helpers::print_seeding_instructions;
 pub use migration::sendou_migration_cli;
 pub use schema::SendouId;
 
@@ -134,7 +136,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
     let old_players = Database::read(in_db)?.into_map();
     let mut new_players = old_players.clone();
 
-    let teams = initialize_teams(&tournament_context, &mut new_players);
+    let teams = initialize_teams(&tournament_context, &old_players, &mut new_players);
     wait_for_tournament_start(&tournament_context, &get_tournament).await?;
 
     let language_command = create_language_command();
@@ -233,6 +235,7 @@ where
 
 fn initialize_teams<'a>(
     tournament_context: &'a TournamentContext,
+    old_players: &SwitzerlandPlayerMap,
     new_players: &mut SwitzerlandPlayerMap,
 ) -> TeamsMap<'a> {
     let mut teams = HashMap::new();
@@ -247,6 +250,25 @@ fn initialize_teams<'a>(
                 ..Default::default()
             });
     }
+
+    print_seeding_instructions(
+        old_players,
+        teams.values().map(|team| {
+            (
+                team,
+                PlayerId::Sendou(team.members.first().unwrap().user_id),
+            )
+        }),
+        |team, player| {
+            format!(
+                "{} ({}) [{:.1} SP]",
+                team.name,
+                team.members.first().unwrap().username,
+                player.rating.rating
+            )
+        },
+    );
+
     teams
 }
 
