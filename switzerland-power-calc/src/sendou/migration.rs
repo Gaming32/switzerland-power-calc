@@ -5,6 +5,7 @@ use ansi_term::Color;
 use itertools::Itertools;
 use reqwest::Client;
 use std::io;
+use std::io::Write;
 use std::path::Path;
 
 #[tokio::main]
@@ -41,13 +42,17 @@ pub async fn sendou_migration_cli(
         let sendou = loop {
             player_name.clear();
             print!("sendou slug> ");
+            io::stdout().flush()?;
             io::stdin().read_line(&mut player_name)?;
             let player_slug = player_name.trim();
             if player_slug.is_empty() {
                 break None;
             }
             match request_player_info(&client, player_slug).await {
-                Ok(user) => break Some(user.user),
+                Ok(user) => {
+                    println!("Found player '{}' with ID {}", user.user.username, user.user.id);
+                    break Some(user.user);
+                }
                 Err(e) => println!(
                     "{}",
                     Color::Red.paint(format!("Couldn't find player {player_slug}: {e}"))
