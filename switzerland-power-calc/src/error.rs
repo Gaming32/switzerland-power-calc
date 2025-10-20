@@ -1,8 +1,12 @@
+use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use thiserror::Error;
 
+#[cfg(feature = "error_backtrace")]
+use std::backtrace::Backtrace;
+
 #[derive(Error, Debug)]
-pub enum Error {
+pub enum ErrorKind {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
     #[error("CBOR Serialization error: {0}")]
@@ -29,10 +33,48 @@ pub enum Error {
     Custom(String),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
-
-impl From<serenity::Error> for Error {
+impl From<serenity::Error> for ErrorKind {
     fn from(value: serenity::Error) -> Self {
-        Self::Discord(Box::new(value))
+        ErrorKind::Discord(Box::new(value))
     }
 }
+
+impl From<String> for ErrorKind {
+    fn from(value: String) -> Self {
+        Self::Custom(value)
+    }
+}
+
+impl From<&str> for ErrorKind {
+    fn from(value: &str) -> Self {
+        Self::Custom(value.to_string())
+    }
+}
+
+#[derive(Error, Debug)]
+pub struct Error {
+    #[source]
+    pub error: ErrorKind,
+    #[cfg(feature = "error_backtrace")]
+    #[backtrace]
+    pub backtrace: Backtrace,
+}
+
+impl<E: Into<ErrorKind>> From<E> for Error {
+    fn from(source: E) -> Self {
+        Self {
+            error: source.into(),
+            #[cfg(feature = "error_backtrace")]
+            // force_capture because if we enabled this feature, we always want to see the backtrace
+            backtrace: Backtrace::force_capture(),
+        }
+    }
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.error, f)
+    }
+}
+
+pub type Result<T> = std::result::Result<T, Error>;

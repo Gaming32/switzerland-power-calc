@@ -46,8 +46,9 @@ use switzerland_power_animated::{AsyncAnimationGenerator, MatchOutcome, PowerSta
 use tokio::sync::oneshot;
 use tokio::time;
 use tokio::time::{MissedTickBehavior, sleep};
-use unic_emoji_char::{is_emoji, is_emoji_component};
+use unic_emoji_char::is_emoji_presentation;
 
+use crate::error::ErrorKind;
 use crate::sendou::cli_helpers::print_seeding_instructions;
 pub use migration::sendou_migration_cli;
 pub use schema::SendouId;
@@ -97,27 +98,25 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         .await?
     {
         Channel::Private(channel) => {
-            return Err(Error::Custom(format!(
-                "Discord channel {} is not part of a guild",
-                channel.name()
-            )));
+            return Err(
+                format!("Discord channel {} is not part of a guild", channel.name()).into(),
+            );
         }
         Channel::Guild(channel) if channel.kind != ChannelType::Category => {
-            return Err(Error::Custom(format!(
+            return Err(format!(
                 "Discord channel {} is not a Category channel, but a {:?} channel",
                 channel.name, channel.kind
-            )));
+            )
+            .into());
         }
         Channel::Guild(category) => category,
-        _ => return Err(Error::Custom("Your Discord channel is weird".to_string())),
+        _ => return Err("Your Discord channel is weird".into()),
     };
     let get_guild = || -> Result<_> {
         chat_category
             .guild_id
             .to_guild_cached(discord_http.cache())
-            .ok_or_else(|| {
-                Error::Custom("Chat category Discord is not accessible by bot".to_string())
-            })
+            .ok_or_else(|| "Chat category Discord is not accessible by bot".into())
     };
     let moderator_channel = env::<ChannelId>("DISCORD_MODERATOR_CHANNEL_ID")?;
 
@@ -221,7 +220,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
 }
 
 fn env_str(var: &str) -> Result<String> {
-    dotenvy::var(var).map_err(|_| Error::MissingEnv(var.to_string()))
+    dotenvy::var(var).map_err(|_| ErrorKind::MissingEnv(var.to_string()).into())
 }
 
 fn env<T: FromStr>(var: &str) -> Result<T>
@@ -230,7 +229,7 @@ where
 {
     env_str(var)?
         .parse()
-        .map_err(|e| Error::InvalidEnv(var.to_string(), Box::new(e)))
+        .map_err(|e| ErrorKind::InvalidEnv(var.to_string(), Box::new(e)).into())
 }
 
 fn initialize_teams<'a>(
@@ -246,9 +245,9 @@ fn initialize_teams<'a>(
             .entry(PlayerId::Sendou(player.user_id))
             .or_insert_with(|| SwitzerlandPlayer {
                 id: PlayerId::Sendou(player.user_id),
-                display_name: Some(player.username.clone()),
                 ..Default::default()
-            });
+            })
+            .display_name = Some(player.username.clone());
     }
 
     print_seeding_instructions(
@@ -366,7 +365,11 @@ async fn create_discord_channels(
         let switzerland_player = players.get_mut(&PlayerId::Sendou(player.user_id)).unwrap();
         let guess_language = switzerland_player.language.is_none();
         let language = switzerland_player.language.get_or_insert_with(|| {
-            Language::guess_from_country(&player.country).unwrap_or_default()
+            player
+                .country
+                .as_ref()
+                .and_then(|lang| Language::guess_from_country(lang))
+                .unwrap_or_default()
         });
         let language_command =
             CommandIdDisplay(language.language_command_name(), language_command_id);
@@ -746,7 +749,7 @@ fn send_progress_message_to_player(
     let mut power_status = if let Some(calc_round) = calc_round
         && !original_players.contains_key(player_id)
     {
-        if calc_round + 1 < swiss_round_count {
+        if calc_round < swiss_round_count {
             PowerStatus::Calculating {
                 progress: calc_round,
                 total: swiss_round_count,
@@ -849,7 +852,7 @@ fn send_progress_message_to_player(
 }
 
 fn format_link(body: &str, link: &str) -> String {
-    if !body.chars().any(|x| is_emoji(x) || is_emoji_component(x)) {
+    if !body.chars().any(is_emoji_presentation) {
         format!("[{body}]({link})")
     } else {
         format!("{body} ({link})")

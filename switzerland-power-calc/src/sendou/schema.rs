@@ -128,7 +128,7 @@ pub struct TournamentTeamMember {
     pub user_id: SendouId,
     pub username: String,
     pub discord_id: serenity::all::UserId,
-    pub country: String,
+    pub country: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
