@@ -3,9 +3,6 @@ name = "switzerland-power-calc"
 version = "0.1.0"
 edition.workspace = true
 
-[features]
-error_backtrace = []
-
 [dependencies]
 clap = { version = "4.5.41", features = ["derive"] }
 skillratings = { version = "0.27.1", features = ["serde"] }
@@ -33,4 +30,3 @@ dashmap = "6.1.0"
 derive_more = { workspace = true, features = ["display"] }
 switzerland-power-animated = { path = "../switzerland-power-animated" }
 rustyline-async = "0.4.7"
-rustversion = "1.0.22"

@@ -1,9 +1,7 @@
+use std::backtrace::Backtrace;
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use thiserror::Error;
-
-#[cfg(feature = "error_backtrace")]
-use std::backtrace::Backtrace;
 
 #[derive(Error, Debug)]
 pub enum ErrorKind {
@@ -51,22 +49,23 @@ impl From<&str> for ErrorKind {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub struct Error {
-    #[source]
     pub error: ErrorKind,
-    #[cfg(feature = "error_backtrace")]
-    #[backtrace]
     pub backtrace: Backtrace,
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
 }
 
 impl<E: Into<ErrorKind>> From<E> for Error {
     fn from(source: E) -> Self {
         Self {
             error: source.into(),
-            #[cfg(feature = "error_backtrace")]
-            // force_capture because if we enabled this feature, we always want to see the backtrace
-            backtrace: Backtrace::force_capture(),
+            backtrace: Backtrace::capture(),
         }
     }
 }

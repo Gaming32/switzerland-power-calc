@@ -2159,7 +2159,6 @@ dependencies = [
  "indexset",
  "itertools",
  "reqwest",
- "rustversion",
  "rustyline-async",
  "serde",
  "serde_cbor",

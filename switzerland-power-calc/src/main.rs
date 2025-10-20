@@ -1,5 +1,3 @@
-#![cfg_attr(feature = "error_backtrace", feature(error_generic_member_access))]
-
 mod db;
 mod error;
 mod sendou;
@@ -10,6 +8,7 @@ use clap::Parser;
 use error::{Error, Result};
 use hashlink::LinkedHashMap;
 use itertools::Itertools;
+use std::backtrace::BacktraceStatus;
 use std::cmp::Ordering;
 use std::fs;
 use std::path::PathBuf;
@@ -192,8 +191,9 @@ fn main() {
     let args = Args::parse();
     if let Err(e) = run(args) {
         eprintln!("{e}");
-        #[cfg(feature = "error_backtrace")]
-        eprintln!("{}", e.backtrace);
+        if e.backtrace.status() == BacktraceStatus::Captured {
+            eprintln!("{}", e.backtrace);
+        }
         exit(1);
     }
 }
