@@ -120,6 +120,7 @@ pub struct TournamentTeam {
     pub name: String,
     pub members: Vec<TournamentTeamMember>,
     pub check_ins: Vec<TournamentTeamCheckIn>,
+    pub avg_seeding_skill_ordinal: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]

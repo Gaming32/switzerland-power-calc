@@ -30,6 +30,8 @@ pub struct SwitzerlandPlayer {
     pub rank: Option<NonZeroU32>,
     #[serde(flatten)]
     pub rating: Glicko2Rating,
+    #[serde(skip)]
+    pub unrated: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Hash, Eq, PartialEq)]
@@ -97,7 +99,7 @@ impl Database {
             players: map
                 .into_iter()
                 .map(|(_, v)| v)
-                .filter(|x| x.rating != const { Glicko2Rating::new() })
+                .filter(|x| !x.unrated)
                 .collect(),
         };
         result.sort();

@@ -4,7 +4,7 @@ use itertools::Itertools;
 use std::cmp::Ordering;
 
 pub fn print_seeding_instructions<'a, Team, Iter, Format>(
-    old_players: &SwitzerlandPlayerMap,
+    players: &SwitzerlandPlayerMap,
     teams_iter: Iter,
     formatter: Format,
 ) where
@@ -14,7 +14,8 @@ pub fn print_seeding_instructions<'a, Team, Iter, Format>(
 {
     let sorted_teams = teams_iter
         .into_iter()
-        .filter_map(|(team, name)| old_players.get(&name).map(|x| (team, x)))
+        .filter_map(|(team, name)| players.get(&name).map(|x| (team, x)))
+        .filter(|(_, p)| p.rating.rating != 1500.0)
         .sorted_by(|(_, p1), (_, p2)| p1.descending_rating_order_cmp(p2))
         .collect_vec();
     if sorted_teams.is_empty() {

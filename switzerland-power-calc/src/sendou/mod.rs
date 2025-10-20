@@ -121,21 +121,31 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
     let moderator_channel = env::<ChannelId>("DISCORD_MODERATOR_CHANNEL_ID")?;
 
     let get_tournament = async || -> Result<_> {
-        Ok(http_client
-            .get(tournament_url.clone())
-            .send()
-            .await?
-            .error_for_status()?
-            .json::<TournamentRoot>()
-            .await?
-            .tournament)
+        let real_get = async || {
+            Ok(http_client
+                .get(tournament_url.clone())
+                .send()
+                .await?
+                .error_for_status()?
+                .json::<TournamentRoot>()
+                .await?
+                .tournament)
+        };
+        for i in 1..=4 {
+            let result = real_get().await;
+            if result.is_ok() {
+                return result;
+            }
+            sleep(Duration::from_secs(1 << i)).await;
+        }
+        real_get().await
     };
     let tournament_context = get_tournament().await?.context;
 
     let old_players = Database::read(in_db)?.into_map();
     let mut new_players = old_players.clone();
 
-    let teams = initialize_teams(&tournament_context, &old_players, &mut new_players);
+    let teams = initialize_teams(&tournament_context, &mut new_players);
     wait_for_tournament_start(&tournament_context, &get_tournament).await?;
 
     let language_command = create_language_command();
@@ -234,24 +244,32 @@ where
 
 fn initialize_teams<'a>(
     tournament_context: &'a TournamentContext,
-    old_players: &SwitzerlandPlayerMap,
-    new_players: &mut SwitzerlandPlayerMap,
+    players: &mut SwitzerlandPlayerMap,
 ) -> TeamsMap<'a> {
     let mut teams = HashMap::new();
     for team in &tournament_context.teams {
         let player = team.members.first().expect("Sendou team has no members");
+        // I couldn't find anyone whose Seeding Power landed outside this [850,1600] range, but
+        // let's cap it anyway just to be safe.
+        let starting_ord = team.avg_seeding_skill_ordinal.clamp(-10.0, 40.0);
         teams.insert(team.id, team);
-        new_players
+        players
             .entry(PlayerId::Sendou(player.user_id))
             .or_insert_with(|| SwitzerlandPlayer {
                 id: PlayerId::Sendou(player.user_id),
+                rating: Glicko2Rating {
+                    rating: starting_ord * 10.0 + 1500.0,
+                    deviation: 350.0 - starting_ord.abs() * 3.75,
+                    ..Default::default()
+                },
+                unrated: true,
                 ..Default::default()
             })
             .display_name = Some(player.username.clone());
     }
 
     print_seeding_instructions(
-        old_players,
+        players,
         teams.values().map(|team| {
             (
                 team,
@@ -260,10 +278,11 @@ fn initialize_teams<'a>(
         }),
         |team, player| {
             format!(
-                "{} ({}) [{:.1} SP]",
+                "{} ({}) [{:.1} SP{}]",
                 team.name,
                 team.members.first().unwrap().username,
-                player.rating.rating
+                player.rating.rating,
+                if player.unrated { " (NEW)" } else { "" }
             )
         },
     );
@@ -628,6 +647,7 @@ async fn run_tournament(
                 let player = new_players.get_mut(player).unwrap();
                 let old_player = player.clone();
                 player.rating = new_rating;
+                player.unrated = false;
 
                 if !new_match {
                     return Ok(());
