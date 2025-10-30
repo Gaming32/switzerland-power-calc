@@ -219,7 +219,10 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
     if !new_user_languages.is_empty() {
         let mut new_db = new_db;
         for user in &mut new_db.players {
-            if let Some(new_language) = new_user_languages.get(&user.id.unwrap_sendou()) {
+            let PlayerId::Sendou(sendou_id) = user.id else {
+                continue;
+            };
+            if let Some(new_language) = new_user_languages.get(&sendou_id) {
                 user.language = Some(*new_language);
             }
         }
