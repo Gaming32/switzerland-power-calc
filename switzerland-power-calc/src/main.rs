@@ -3,8 +3,9 @@ mod error;
 mod migration;
 mod sendou;
 
-use crate::db::{SwitzerlandPlayer, SwitzerlandPlayerMap};
+use crate::db::{Database, SwitzerlandPlayer, SwitzerlandPlayerMap};
 use crate::migration::MigrationStyle;
+use crate::sendou::leaderboard::generate_leaderboard_messages;
 use crate::sendou::{migration_cli, sendou_cli};
 use clap::Parser;
 use error::{Error, Result};
@@ -12,7 +13,9 @@ use hashlink::LinkedHashMap;
 use itertools::Itertools;
 use std::backtrace::BacktraceStatus;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::process::exit;
 use switzerland_power_animated::{
@@ -91,6 +94,17 @@ enum Commands {
         /// The animation to generate
         #[command(subcommand)]
         animation: ParsedPowerStatus,
+    },
+    /// Generate a leaderboard message for display in Discord
+    Leaderboard {
+        #[arg(short, long)]
+        /// The path to an old database to compare with
+        comparison: Option<PathBuf>,
+        /// Splits the leaderboard into parts so it doesn't go over this length.
+        #[arg(short, long)]
+        max_message_length: Option<NonZeroUsize>,
+        /// The path to the database
+        db: PathBuf,
     },
 }
 
@@ -280,6 +294,38 @@ fn run(args: Args) -> Result<()> {
             fs::write(&output_path, &*animation)?;
 
             println!("Saved animation to {}", output_path.display());
+        }
+        Leaderboard {
+            comparison,
+            max_message_length,
+            db,
+        } => {
+            let db = Database::read(&db)?;
+            let old_players = comparison
+                .map(|p| Database::read(&p))
+                .transpose()?
+                .map(Database::into_map)
+                .unwrap_or_else(|| db.clone().into_map());
+            let max_message_length = max_message_length.map(NonZeroUsize::get);
+            let messages = generate_leaderboard_messages(
+                &old_players,
+                &db,
+                &HashMap::new(),
+                max_message_length.unwrap_or(usize::MAX),
+            );
+            if max_message_length.is_some() {
+                for (index, message) in messages.into_iter().enumerate() {
+                    if index > 0 {
+                        println!();
+                    }
+                    println!("Message #{}:", index + 1);
+                    println!("{message}");
+                }
+            } else {
+                for message in messages {
+                    println!("{message}");
+                }
+            }
         }
     }
     Ok(())

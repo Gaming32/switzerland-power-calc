@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_repr::Deserialize_repr;
+use serde_with::DefaultOnNull;
 use serde_with::{BoolFromInt, serde_as};
 
 pub type SendouId = u32;
@@ -113,6 +114,7 @@ pub struct TournamentContext {
     pub teams: Vec<TournamentTeam>,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TournamentTeam {
@@ -120,6 +122,7 @@ pub struct TournamentTeam {
     pub name: String,
     pub members: Vec<TournamentTeamMember>,
     pub check_ins: Vec<TournamentTeamCheckIn>,
+    #[serde_as(deserialize_as = "DefaultOnNull")]
     pub avg_seeding_skill_ordinal: f64,
 }
 

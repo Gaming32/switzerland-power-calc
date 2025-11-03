@@ -1,6 +1,7 @@
 mod cli_helpers;
 mod discord;
 pub mod lang;
+pub mod leaderboard;
 pub mod schema;
 mod types;
 
@@ -27,9 +28,10 @@ use serenity::FutureExt;
 use serenity::all::{
     ActivityData, CacheHttp, Channel, ChannelId, ChannelType, CommandId, CommandOptionType,
     CreateAttachment, CreateChannel, CreateCommand, CreateCommandOption, CreateMessage,
-    GatewayIntents, Guild, GuildId, Mentionable, PermissionOverwrite, PermissionOverwriteType,
-    Permissions, UserId,
+    GatewayIntents, Guild, GuildId, Mentionable, MessageFlags, PermissionOverwrite,
+    PermissionOverwriteType, Permissions, UserId,
 };
+use serenity::futures::TryStreamExt;
 use skillratings::Outcomes;
 use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2};
 use std::collections::{HashMap, HashSet};
@@ -50,6 +52,7 @@ use unic_emoji_char::is_emoji_presentation;
 use crate::error::ErrorKind;
 pub use crate::migration::migration_cli;
 use crate::sendou::cli_helpers::print_seeding_instructions;
+use crate::sendou::leaderboard::generate_leaderboard_messages;
 pub use schema::SendouId;
 
 #[tokio::main]
@@ -117,6 +120,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
             .to_guild_cached(discord_http.cache())
             .ok_or_else(|| "Chat category Discord is not accessible by bot".into())
     };
+    let leaderboard_channel = env::<ChannelId>("DISCORD_LEADERBOARD_CHANNEL_ID")?;
     let moderator_channel = env::<ChannelId>("DISCORD_MODERATOR_CHANNEL_ID")?;
 
     let get_tournament = async || -> Result<_> {
@@ -132,8 +136,13 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
         };
         for i in 1..=4 {
             let result = real_get().await;
-            if result.is_ok() {
-                return result;
+            match &result {
+                Ok(_) => return result,
+                Err(Error {
+                    error: ErrorKind::Http(http),
+                    ..
+                }) if http.is_decode() => return result,
+                _ => {}
             }
             sleep(Duration::from_secs(1 << i)).await;
         }
@@ -184,10 +193,11 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
     .await?;
 
     let new_db = finalize_tournament(out_db, &old_players, new_players)?;
-    send_summary_to_discord(
+    send_summaries_to_discord(
         &discord_http,
         &*get_guild()?,
         moderator_channel,
+        leaderboard_channel,
         &old_players,
         &teams,
         &new_db,
@@ -851,6 +861,7 @@ fn send_progress_message_to_player(
             let animation = animation_generator
                 .generate(power_status, language.into())
                 .await?;
+            // TODO: Use Discord nonce
             discord_channel
                 .send_message(
                     discord_http,
@@ -895,10 +906,12 @@ fn finalize_tournament(
     Ok(new_db)
 }
 
-async fn send_summary_to_discord(
-    http: &DiscordHttp,
+#[allow(clippy::too_many_arguments)]
+async fn send_summaries_to_discord(
+    discord_http: &DiscordHttp,
     guild: &Guild,
     moderator_channel: ChannelId,
+    leaderboard_channel: ChannelId,
     old_players: &SwitzerlandPlayerMap,
     teams: &TeamsMap<'_>,
     new_db: &Database,
@@ -915,86 +928,108 @@ async fn send_summary_to_discord(
 
     let mut players_in_discord = HashSet::new();
     for user_id in player_id_to_discord_id.values().copied() {
-        if matches!(
-            guild.member(http, user_id).await,
-            Ok(_)
-                | Err(serenity::Error::Http(
-                    serenity::http::HttpError::UnsuccessfulRequest(serenity::http::ErrorResponse {
-                        status_code: reqwest::StatusCode::NOT_FOUND,
-                        ..
-                    })
-                ))
-        ) {
+        if guild.member(discord_http, user_id).await.is_ok() {
             players_in_discord.insert(user_id);
         }
     }
 
-    let mut message = String::new();
-    let _ = writeln!(
-        message,
-        "And that concludes {}! Thank you all for participating, and I hope you had a good time.",
-        tournament.context.name
-    );
-
-    let mut print_results = |title, results: &[SendouId; 3]| {
-        let _ = writeln!(message, "## {title}");
-        for (team_id, emoji) in results.iter().zip(['🥇', '🥈', '🥉']) {
-            let player = tournament
-                .context
-                .teams
-                .iter()
-                .find(|x| x.id == *team_id)
-                .unwrap()
-                .members
-                .first()
-                .unwrap();
-            let _ = writeln!(
-                message,
-                "- {emoji} {}{}",
-                player.username,
-                if players_in_discord.contains(&player.discord_id) {
-                    format!(" ({})", player.discord_id.mention())
-                } else {
-                    "".to_string()
-                },
-            );
-        }
-    };
-    match &compute_results(&tournament.data)[..] {
-        [] => {}
-        [(_, results)] => print_results("Results".to_string(), results),
-        all_results => {
-            for (bracket, results) in all_results {
-                print_results(format!("{bracket} results"), results);
-            }
-        }
-    }
-
-    let _ = writeln!(message, "## Switzerland Power changes");
-    for new_player in &new_db.players {
-        let Some(discord_id) = player_id_to_discord_id.get(&new_player.id) else {
-            continue;
-        };
-        if !players_in_discord.contains(discord_id) {
-            continue;
-        }
-        let old_result = old_players.get(&new_player.id);
-        if let Some(old_result) = old_result
-            && old_result.rating == new_player.rating
-        {
-            continue;
-        }
+    {
+        let mut message = String::new();
         let _ = writeln!(
             message,
-            "- {} {}",
-            discord_id.mention(),
-            format_player_rank_summary(old_result, new_player, true)
+            "And that concludes {}! Thank you all for participating, and I hope you had a good time.",
+            tournament.context.name
         );
+        let mut print_results = |title, results: &[SendouId; 3]| {
+            let _ = writeln!(message, "## {title}");
+            for (team_id, emoji) in results.iter().zip(['🥇', '🥈', '🥉']) {
+                let player = tournament
+                    .context
+                    .teams
+                    .iter()
+                    .find(|x| x.id == *team_id)
+                    .unwrap()
+                    .members
+                    .first()
+                    .unwrap();
+                let _ = writeln!(
+                    message,
+                    "- {emoji} {}{}",
+                    player.username,
+                    if players_in_discord.contains(&player.discord_id) {
+                        format!(" ({})", player.discord_id.mention())
+                    } else {
+                        "".to_string()
+                    },
+                );
+            }
+        };
+
+        match &compute_results(&tournament.data)[..] {
+            [] => {}
+            [(_, results)] => print_results("Results".to_string(), results),
+            all_results => {
+                for (bracket, results) in all_results {
+                    print_results(format!("{bracket} results"), results);
+                }
+            }
+        }
+
+        let _ = writeln!(message, "## Switzerland Power changes");
+        for new_player in &new_db.players {
+            let Some(discord_id) = player_id_to_discord_id.get(&new_player.id) else {
+                continue;
+            };
+            if !players_in_discord.contains(discord_id) {
+                continue;
+            }
+            let old_result = old_players.get(&new_player.id);
+            if let Some(old_result) = old_result
+                && old_result.rating == new_player.rating
+            {
+                continue;
+            }
+            let _ = writeln!(
+                message,
+                "- {} {}",
+                discord_id.mention(),
+                format_player_rank_summary(old_result, new_player, true)
+            );
+        }
+
+        moderator_channel
+            .send_message(discord_http, CreateMessage::new().content(message))
+            .await?;
     }
 
-    moderator_channel
-        .send_message(http, CreateMessage::new().content(message))
-        .await?;
+    {
+        let old_leaderboard_messages = leaderboard_channel
+            .messages_iter(discord_http.http())
+            .try_collect::<Vec<_>>()
+            .await?;
+        for message in
+            generate_leaderboard_messages(old_players, new_db, &player_id_to_discord_id, 2000)
+        {
+            leaderboard_channel
+                .send_message(
+                    discord_http,
+                    CreateMessage::new()
+                        .content(message)
+                        .flags(MessageFlags::SUPPRESS_NOTIFICATIONS),
+                )
+                .await?;
+        }
+        for messages in old_leaderboard_messages
+            .into_iter()
+            .map(|x| x.id)
+            .chunks(100)
+            .into_iter()
+        {
+            leaderboard_channel
+                .delete_messages(discord_http.http(), messages)
+                .await?;
+        }
+    }
 
     Ok(())
 }
