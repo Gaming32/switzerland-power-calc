@@ -1,9 +1,11 @@
 mod db;
 mod error;
+mod migration;
 mod sendou;
 
 use crate::db::{SwitzerlandPlayer, SwitzerlandPlayerMap};
-use crate::sendou::{sendou_cli, sendou_migration_cli};
+use crate::migration::MigrationStyle;
+use crate::sendou::{migration_cli, sendou_cli};
 use clap::Parser;
 use error::{Error, Result};
 use hashlink::LinkedHashMap;
@@ -60,8 +62,10 @@ enum Commands {
         /// The URL to the tournament on sendou.ink
         tournament_url: String,
     },
-    /// Migrate old string IDs to new Sendou-based IDs
+    /// Migrate old string IDs to new Sendou-based IDs or to other names
     MigrateNames {
+        /// The style of migration to perform
+        style: MigrationStyle,
         /// The path to the input database
         in_db: PathBuf,
         /// The path to the database to create as a result
@@ -247,10 +251,11 @@ fn run(args: Args) -> Result<()> {
             tournament_url,
         } => sendou_cli(&in_db, &out_db, &tournament_url)?,
         MigrateNames {
+            style,
             in_db,
             out_db,
             query,
-        } => sendou_migration_cli(&in_db, &out_db, query.as_ref())?,
+        } => migration_cli(style, &in_db, &out_db, query.as_ref())?,
         Animate {
             quality,
             lossless,

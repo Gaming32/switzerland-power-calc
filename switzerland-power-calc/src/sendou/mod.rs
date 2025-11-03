@@ -1,8 +1,7 @@
 mod cli_helpers;
 mod discord;
 pub mod lang;
-mod migration;
-mod schema;
+pub mod schema;
 mod types;
 
 use crate::db::{Database, PlayerId, SwitzerlandPlayer, SwitzerlandPlayerMap};
@@ -49,8 +48,8 @@ use tokio::time::{MissedTickBehavior, sleep};
 use unic_emoji_char::is_emoji_presentation;
 
 use crate::error::ErrorKind;
+pub use crate::migration::migration_cli;
 use crate::sendou::cli_helpers::print_seeding_instructions;
-pub use migration::sendou_migration_cli;
 pub use schema::SendouId;
 
 #[tokio::main]
