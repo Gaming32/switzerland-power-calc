@@ -446,7 +446,7 @@ async fn create_discord_channels(
             channel
                 .say(
                     discord_http,
-                    language.language_command_explanation(&language_command),
+                    language.language_command_explanation(&language_command, *language),
                 )
                 .await?;
         }
@@ -861,7 +861,6 @@ fn send_progress_message_to_player(
             let animation = animation_generator
                 .generate(power_status, language.into())
                 .await?;
-            // TODO: Use Discord nonce
             discord_channel
                 .send_message(
                     discord_http,

@@ -295,8 +295,8 @@ language_messages! {
     language_command_arg_desc => {
         Language::EnglishUnitedStates => "The language to use. If not specified, the language of your Discord client is used",
     },
-    language_command_explanation(command: &CommandIdDisplay) => {
-        Language::EnglishUnitedStates => "You can use the {command} command to change languages for these messages. (Translations are best effort and some or most may be missing.)",
+    language_command_explanation(command: &CommandIdDisplay, current_language: Language) => {
+        Language::EnglishUnitedStates => "You can use the {command} command to change languages for these messages. (Translations are best effort and some or most may be missing. The currently selected language is {current_language}.)",
     },
     changed_language(language: Language) => {
         Language::EnglishUnitedStates => "Bot language changed to {language}",
