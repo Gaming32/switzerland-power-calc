@@ -61,14 +61,17 @@ fn main() -> Result<(), Box<dyn Error>> {
             TranslationType::Normal,
             match lang_name.as_str() {
                 "USen" | "EUen" => "Calculating Switzerland Power...",
-                "JPja" => "Switzerland パワー 計測中…",
+                "JPja" => "スイツァランド パワー 計測中…",
                 _ => get_translation("LayoutMsg/Tml_ListRecord_00", "030"),
             },
         );
         add_translation(
             "calculated",
             TranslationType::Normal,
-            get_translation("LayoutMsg/Lobby_ResultDialogue_00", "T_Rank_00"),
+            match lang_name.as_str() {
+                "EUnl" => "Switzerland-kracht berekend!",
+                _ => get_translation("LayoutMsg/Lobby_ResultDialogue_00", "T_Rank_00"),
+            },
         );
         add_translation(
             "power_value",
@@ -98,7 +101,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             TranslationType::Normal,
             match lang_name.as_str() {
                 "USen" | "EUen" => "Switzerland Power",
-                "JPja" => "Switzerland パワー",
+                "JPja" => "スイツァランド パワー",
                 _ => "Switzerland Power",
             },
         );

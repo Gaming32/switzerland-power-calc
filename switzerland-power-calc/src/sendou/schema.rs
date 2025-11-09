@@ -1,6 +1,7 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_repr::Deserialize_repr;
+use serde_with::DefaultOnNull;
 use serde_with::{BoolFromInt, serde_as};
 
 pub type SendouId = u32;
@@ -113,6 +114,7 @@ pub struct TournamentContext {
     pub teams: Vec<TournamentTeam>,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TournamentTeam {
@@ -120,16 +122,17 @@ pub struct TournamentTeam {
     pub name: String,
     pub members: Vec<TournamentTeamMember>,
     pub check_ins: Vec<TournamentTeamCheckIn>,
+    #[serde_as(deserialize_as = "DefaultOnNull")]
+    pub avg_seeding_skill_ordinal: f64,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TournamentTeamMember {
+    pub user_id: SendouId,
     pub username: String,
     pub discord_id: serenity::all::UserId,
-    pub custom_url: Option<String>,
-    pub country: String,
-    pub in_game_name: String,
+    pub country: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
@@ -144,4 +147,15 @@ pub struct MatchRoot {
 #[serde(rename_all = "camelCase")]
 pub struct MatchResult {
     pub winner_team_id: SendouId,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SendouUserRoot {
+    pub user: SendouUser,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SendouUser {
+    pub id: SendouId,
+    pub username: String,
 }

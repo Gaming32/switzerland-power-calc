@@ -1,8 +1,10 @@
+use std::backtrace::Backtrace;
+use std::fmt::{Debug, Display, Formatter};
 use std::io;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-pub enum Error {
+pub enum ErrorKind {
     #[error("I/O error: {0}")]
     Io(#[from] io::Error),
     #[error("CBOR Serialization error: {0}")]
@@ -10,7 +12,7 @@ pub enum Error {
     #[error("JSON Serialization error: {0}")]
     JsonSerialization(#[from] serde_json::Error),
     #[error("CLI error: {0}")]
-    Readline(#[from] rustyline::error::ReadlineError),
+    Readline(#[from] rustyline_async::ReadlineError),
     #[error("Missing environment variable {0}")]
     MissingEnv(String),
     #[error("Invalid environment variable {0}: {1}")]
@@ -29,10 +31,49 @@ pub enum Error {
     Custom(String),
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
-
-impl From<serenity::Error> for Error {
+impl From<serenity::Error> for ErrorKind {
     fn from(value: serenity::Error) -> Self {
-        Self::Discord(Box::new(value))
+        ErrorKind::Discord(Box::new(value))
     }
 }
+
+impl From<String> for ErrorKind {
+    fn from(value: String) -> Self {
+        Self::Custom(value)
+    }
+}
+
+impl From<&str> for ErrorKind {
+    fn from(value: &str) -> Self {
+        Self::Custom(value.to_string())
+    }
+}
+
+#[derive(Debug)]
+pub struct Error {
+    pub error: ErrorKind,
+    pub backtrace: Backtrace,
+}
+
+impl std::error::Error for Error {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(&self.error)
+    }
+}
+
+impl<E: Into<ErrorKind>> From<E> for Error {
+    fn from(source: E) -> Self {
+        Self {
+            error: source.into(),
+            backtrace: Backtrace::capture(),
+        }
+    }
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.error, f)
+    }
+}
+
+pub type Result<T> = std::result::Result<T, Error>;

@@ -1,18 +1,21 @@
-mod cli_helpers;
 mod db;
 mod error;
+mod migration;
 mod sendou;
-mod tourney;
 
-use crate::db::SwitzerlandPlayer;
-use crate::sendou::sendou_cli;
-use crate::tourney::tourney_cli;
+use crate::db::{Database, SwitzerlandPlayer, SwitzerlandPlayerMap};
+use crate::migration::MigrationStyle;
+use crate::sendou::leaderboard::generate_leaderboard_messages;
+use crate::sendou::{migration_cli, sendou_cli};
 use clap::Parser;
 use error::{Error, Result};
 use hashlink::LinkedHashMap;
 use itertools::Itertools;
+use std::backtrace::BacktraceStatus;
 use std::cmp::Ordering;
+use std::collections::HashMap;
 use std::fs;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::process::exit;
 use switzerland_power_animated::{
@@ -53,13 +56,6 @@ enum Commands {
         /// The users to query. If none specified, query all
         query: Option<Vec<String>>,
     },
-    /// Run a tournament
-    Tourney {
-        /// The path to the input database
-        in_db: PathBuf,
-        /// The path to the database to create as a result
-        out_db: PathBuf,
-    },
     /// Automatically process a tournament being run on sendou.ink
     Sendou {
         /// The path to the input database
@@ -68,6 +64,17 @@ enum Commands {
         out_db: PathBuf,
         /// The URL to the tournament on sendou.ink
         tournament_url: String,
+    },
+    /// Migrate old string IDs to new Sendou-based IDs or to other names
+    MigrateNames {
+        /// The style of migration to perform
+        style: MigrationStyle,
+        /// The path to the input database
+        in_db: PathBuf,
+        /// The path to the database to create as a result
+        out_db: PathBuf,
+        /// The users to migrate. If none specified, query all
+        query: Option<Vec<String>>,
     },
     /// Generate an animation
     Animate {
@@ -87,6 +94,17 @@ enum Commands {
         /// The animation to generate
         #[command(subcommand)]
         animation: ParsedPowerStatus,
+    },
+    /// Generate a leaderboard message for display in Discord
+    Leaderboard {
+        #[arg(short, long)]
+        /// The path to an old database to compare with
+        comparison: Option<PathBuf>,
+        /// Splits the leaderboard into parts so it doesn't go over this length.
+        #[arg(short, long)]
+        max_message_length: Option<NonZeroUsize>,
+        /// The path to the database
+        db: PathBuf,
     },
 }
 
@@ -191,6 +209,9 @@ fn main() {
     let args = Args::parse();
     if let Err(e) = run(args) {
         eprintln!("{e}");
+        if e.backtrace.status() == BacktraceStatus::Captured {
+            eprintln!("{}", e.backtrace);
+        }
         exit(1);
     }
 }
@@ -210,7 +231,7 @@ fn run(args: Args) -> Result<()> {
             println!("Initialized DB at {}", db.display());
         }
         Query { db, query, verbose } => {
-            let results = db::query(&db, query.as_ref())?;
+            let results = db::query(&db, query.as_ref(), true)?;
             println!("Found {} players:", results.len());
             for player in results {
                 if !verbose {
@@ -219,7 +240,7 @@ fn run(args: Args) -> Result<()> {
                     println!(
                         "  #{} {}: {:?}",
                         player.unwrap_rank(),
-                        player.name,
+                        player.display_name(),
                         player.rating
                     );
                 }
@@ -230,20 +251,25 @@ fn run(args: Args) -> Result<()> {
             new_db,
             query,
         } => {
-            let old_results = db::query(&old_db, None)?
+            let old_results = db::query(&old_db, None, true)?
                 .into_iter()
-                .map(|x| (x.name.clone(), x))
+                .map(|x| (x.id.clone(), x))
                 .collect::<LinkedHashMap<_, _>>();
-            let new_results = db::query(&new_db, query.as_ref())?;
+            let new_results = db::query(&new_db, query.as_ref(), true)?;
             println!("Found {} players:", new_results.len());
             summarize_differences(&old_results, &new_results);
         }
-        Tourney { in_db, out_db } => tourney_cli(&in_db, &out_db)?,
         Sendou {
             in_db,
             out_db,
             tournament_url,
         } => sendou_cli(&in_db, &out_db, &tournament_url)?,
+        MigrateNames {
+            style,
+            in_db,
+            out_db,
+            query,
+        } => migration_cli(style, &in_db, &out_db, query.as_ref())?,
         Animate {
             quality,
             lossless,
@@ -269,16 +295,48 @@ fn run(args: Args) -> Result<()> {
 
             println!("Saved animation to {}", output_path.display());
         }
+        Leaderboard {
+            comparison,
+            max_message_length,
+            db,
+        } => {
+            let db = Database::read(&db)?;
+            let old_players = comparison
+                .map(|p| Database::read(&p))
+                .transpose()?
+                .map(Database::into_map)
+                .unwrap_or_else(|| db.clone().into_map());
+            let max_message_length = max_message_length.map(NonZeroUsize::get);
+            let messages = generate_leaderboard_messages(
+                &old_players,
+                &db,
+                &HashMap::new(),
+                max_message_length.unwrap_or(usize::MAX),
+            );
+            if max_message_length.is_some() {
+                for (index, message) in messages.into_iter().enumerate() {
+                    if index > 0 {
+                        println!();
+                    }
+                    println!("Message #{}:", index + 1);
+                    println!("{message}");
+                }
+            } else {
+                for message in messages {
+                    println!("{message}");
+                }
+            }
+        }
     }
     Ok(())
 }
 
 pub fn summarize_differences(
-    old_results: &LinkedHashMap<String, SwitzerlandPlayer>,
+    old_results: &SwitzerlandPlayerMap,
     new_results: &Vec<SwitzerlandPlayer>,
 ) {
     for new_player in new_results {
-        let old_result = old_results.get(&new_player.name);
+        let old_result = old_results.get(&new_player.id);
         if let Some(old_result) = old_result
             && old_result.rating == new_player.rating
         {
@@ -306,7 +364,7 @@ pub fn format_player_simply(
 ) -> String {
     format!(
         "- {}: {}",
-        new_player.name,
+        new_player.display_name(),
         format_player_rank_summary(old_player, new_player, show_rank)
     )
 }
