@@ -531,16 +531,19 @@ async fn run_tournament(
 
     let mut completed_matches = HashSet::new();
     let mut ignored_matches = HashSet::new();
-    let mut old_ranks = players
-        .values()
-        .filter_map(|x| Some((x.id.clone(), x.rank?.get())))
-        .collect::<HashMap<_, _>>();
     let mut ranked_players = players
         .values()
-        .map(|x| x.rating)
-        .filter(|x| *x != const { Glicko2Rating::new() })
-        .map(DescendingRatingGlicko2)
+        .map(|x| DescendingRatingGlicko2(x.rating))
         .collect::<indexset::BTreeSet<_>>();
+    let mut old_ranks = players
+        .values()
+        .map(|x| {
+            (
+                x.id.clone(),
+                ranked_players.rank(&DescendingRatingGlicko2(x.rating)) + 1,
+            )
+        })
+        .collect::<HashMap<_, _>>();
 
     let animation_generator = AsyncAnimationGenerator::new().await?;
 
@@ -667,7 +670,7 @@ async fn run_tournament(
 
                 ranked_players.remove(&DescendingRatingGlicko2(old_player.rating));
                 let new_rank =
-                    ranked_players.rank(&DescendingRatingGlicko2(player.rating)) as u32 + 1;
+                    ranked_players.rank(&DescendingRatingGlicko2(player.rating)) + 1;
                 ranked_players.insert(DescendingRatingGlicko2(player.rating));
                 let old_rank = old_ranks.insert(player.id.clone(), new_rank);
 
@@ -770,8 +773,8 @@ fn send_progress_message_to_player(
     my_result: TournamentMatchOpponent,
     old_rating: Glicko2Rating,
     new_rating: Glicko2Rating,
-    old_rank: Option<u32>,
-    new_rank: u32,
+    old_rank: Option<usize>,
+    new_rank: usize,
     original_language: Language,
 ) -> Result<()> {
     let Some(discord_channel) = discord_channels.get(&team.id).copied() else {
@@ -790,7 +793,7 @@ fn send_progress_message_to_player(
             PowerStatus::Calculated {
                 calculation_rounds: swiss_round_count,
                 power: new_rating.rating,
-                rank: new_rank,
+                rank: new_rank as u32,
             }
         }
     } else if other_team.is_some() {
@@ -799,8 +802,8 @@ fn send_progress_message_to_player(
             matches: Default::default(),
             old_power: old_rating.rating,
             new_power: new_rating.rating,
-            old_rank: old_rank.unwrap(),
-            new_rank,
+            old_rank: old_rank.unwrap() as u32,
+            new_rank: new_rank as u32,
         }
     } else {
         return Ok(());
