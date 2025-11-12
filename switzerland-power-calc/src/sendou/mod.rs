@@ -55,6 +55,8 @@ use crate::sendou::cli_helpers::print_seeding_instructions;
 use crate::sendou::leaderboard::generate_leaderboard_messages;
 pub use schema::SendouId;
 
+const POLL_TIME: Duration = Duration::from_secs(10);
+
 #[tokio::main]
 pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Result<()> {
     if let Some(parent) = out_db.parent() {
@@ -324,7 +326,7 @@ async fn wait_for_tournament_start(
         if !get_tournament().await?.data.stages.is_empty() {
             break;
         }
-        sleep(Duration::from_secs(30)).await;
+        sleep(POLL_TIME).await;
     }
 
     Ok(())
@@ -547,7 +549,7 @@ async fn run_tournament(
 
     let animation_generator = AsyncAnimationGenerator::new().await?;
 
-    let mut interval = time::interval(Duration::from_secs(30));
+    let mut interval = time::interval(POLL_TIME);
     interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let new_players = loop {
         let tournament = get_tournament().await?;
@@ -669,8 +671,7 @@ async fn run_tournament(
                 }
 
                 ranked_players.remove(&DescendingRatingGlicko2(old_player.rating));
-                let new_rank =
-                    ranked_players.rank(&DescendingRatingGlicko2(player.rating)) + 1;
+                let new_rank = ranked_players.rank(&DescendingRatingGlicko2(player.rating)) + 1;
                 ranked_players.insert(DescendingRatingGlicko2(player.rating));
                 let old_rank = old_ranks.insert(player.id.clone(), new_rank);
 
