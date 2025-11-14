@@ -56,6 +56,9 @@ use crate::sendou::leaderboard::generate_leaderboard_messages;
 pub use schema::SendouId;
 
 const POLL_TIME: Duration = Duration::from_secs(10);
+const USER_CHANNEL_PERMS: Permissions = Permissions::VIEW_CHANNEL
+    .union(Permissions::SEND_MESSAGES)
+    .union(Permissions::USE_APPLICATION_COMMANDS);
 
 #[tokio::main]
 pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Result<()> {
@@ -425,9 +428,7 @@ async fn create_discord_channels(
                                 kind: PermissionOverwriteType::Member(me_user.id),
                             },
                             PermissionOverwrite {
-                                allow: Permissions::VIEW_CHANNEL
-                                    | Permissions::SEND_MESSAGES
-                                    | Permissions::USE_APPLICATION_COMMANDS,
+                                allow: USER_CHANNEL_PERMS,
                                 deny: Permissions::empty(),
                                 kind: PermissionOverwriteType::Member(user.id),
                             },
@@ -810,8 +811,9 @@ fn send_progress_message_to_player(
         return Ok(());
     };
 
+    let player_discord_id = team.members.first().unwrap().discord_id;
     let language = discord_user_languages
-        .get(&team.members.first().unwrap().discord_id)
+        .get(&player_discord_id)
         .as_deref()
         .copied()
         .unwrap_or(original_language);
@@ -864,6 +866,16 @@ fn send_progress_message_to_player(
             }
             let animation = animation_generator
                 .generate(power_status, language.into())
+                .await?;
+            discord_channel
+                .create_permission(
+                    discord_http.http(),
+                    PermissionOverwrite {
+                        allow: USER_CHANNEL_PERMS,
+                        deny: Permissions::empty(),
+                        kind: PermissionOverwriteType::Member(player_discord_id),
+                    },
+                )
                 .await?;
             discord_channel
                 .send_message(
