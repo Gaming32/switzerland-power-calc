@@ -30,29 +30,6 @@ impl RankVec {
     }
 }
 
-// #[derive(Copy, Clone)]
-// struct DescendingRatingGlicko2(Glicko2Rating);
-//
-// impl PartialEq for DescendingRatingGlicko2 {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.0.rating == other.0.rating
-//     }
-// }
-//
-// impl Eq for DescendingRatingGlicko2 {}
-//
-// impl PartialOrd for DescendingRatingGlicko2 {
-//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-//         Some(self.cmp(other))
-//     }
-// }
-//
-// impl Ord for DescendingRatingGlicko2 {
-//     fn cmp(&self, other: &Self) -> Ordering {
-//         other.0.rating.total_cmp(&self.0.rating)
-//     }
-// }
-
 #[cfg(test)]
 mod test {
     use crate::sendou::rank_set::RankVec;
