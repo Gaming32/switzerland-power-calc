@@ -2,6 +2,7 @@ mod cli_helpers;
 mod discord;
 pub mod lang;
 pub mod leaderboard;
+mod rank_set;
 pub mod schema;
 mod types;
 
@@ -13,9 +14,7 @@ use crate::sendou::schema::{
     TournamentMatchResult, TournamentMatchStatus, TournamentRoot, TournamentStageSettings,
     TournamentStageSwissSettings, TournamentTeam,
 };
-use crate::sendou::types::{
-    DescendingRatingGlicko2, DiscordChannelsMap, GetTournamentFn, TeamsMap,
-};
+use crate::sendou::types::{DiscordChannelsMap, GetTournamentFn, TeamsMap};
 use crate::{
     Error, Result, format_player_rank_summary, format_player_simply, summarize_differences,
 };
@@ -53,6 +52,7 @@ use crate::error::ErrorKind;
 pub use crate::migration::migration_cli;
 use crate::sendou::cli_helpers::print_seeding_instructions;
 use crate::sendou::leaderboard::generate_leaderboard_messages;
+use crate::sendou::rank_set::RankVec;
 pub use schema::SendouId;
 
 const POLL_TIME: Duration = Duration::from_secs(10);
@@ -534,19 +534,7 @@ async fn run_tournament(
 
     let mut completed_matches = HashSet::new();
     let mut ignored_matches = HashSet::new();
-    let mut ranked_players = players
-        .values()
-        .map(|x| DescendingRatingGlicko2(x.rating))
-        .collect::<indexset::BTreeSet<_>>();
-    let mut old_ranks = players
-        .values()
-        .map(|x| {
-            (
-                x.id.clone(),
-                ranked_players.rank(&DescendingRatingGlicko2(x.rating)) + 1,
-            )
-        })
-        .collect::<HashMap<_, _>>();
+    let mut ranked_players = RankVec::new(players.values().map(|x| x.rating).collect_vec());
 
     let animation_generator = AsyncAnimationGenerator::new().await?;
 
@@ -612,7 +600,7 @@ async fn run_tournament(
                 }
                 let opponent = tourney_match.opponent1.or(tourney_match.opponent2);
                 let (team, player, rating, language) = get_player(&opponent);
-                let rank = old_ranks.get(&player).copied();
+                let rank = ranked_players.get_rank(rating) + 1;
                 send_progress_message_to_player(
                     http_client,
                     http,
@@ -631,7 +619,7 @@ async fn run_tournament(
                     rating,
                     rating,
                     rank,
-                    rank.unwrap_or_default(),
+                    rank,
                     language,
                 )?;
                 continue;
@@ -671,10 +659,8 @@ async fn run_tournament(
                     return Ok(());
                 }
 
-                ranked_players.remove(&DescendingRatingGlicko2(old_player.rating));
-                let new_rank = ranked_players.rank(&DescendingRatingGlicko2(player.rating)) + 1;
-                ranked_players.insert(DescendingRatingGlicko2(player.rating));
-                let old_rank = old_ranks.insert(player.id.clone(), new_rank);
+                let old_rank = ranked_players.get_rank_and_remove(old_player.rating) + 1;
+                let new_rank = ranked_players.insert_and_get_rank(player.rating) + 1;
 
                 writeln!(
                     printer,
@@ -775,7 +761,7 @@ fn send_progress_message_to_player(
     my_result: TournamentMatchOpponent,
     old_rating: Glicko2Rating,
     new_rating: Glicko2Rating,
-    old_rank: Option<usize>,
+    old_rank: usize,
     new_rank: usize,
     original_language: Language,
 ) -> Result<()> {
@@ -804,7 +790,7 @@ fn send_progress_message_to_player(
             matches: Default::default(),
             old_power: old_rating.rating,
             new_power: new_rating.rating,
-            old_rank: old_rank.unwrap() as u32,
+            old_rank: old_rank as u32,
             new_rank: new_rank as u32,
         }
     } else {
