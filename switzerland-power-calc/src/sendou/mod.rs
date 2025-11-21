@@ -853,16 +853,16 @@ fn send_progress_message_to_player(
             let animation = animation_generator
                 .generate(power_status, language.into())
                 .await?;
-            discord_channel
-                .create_permission(
-                    discord_http.http(),
-                    PermissionOverwrite {
-                        allow: USER_CHANNEL_PERMS,
-                        deny: Permissions::empty(),
-                        kind: PermissionOverwriteType::Member(player_discord_id),
-                    },
-                )
-                .await?;
+            // discord_channel
+            //     .create_permission(
+            //         discord_http.http(),
+            //         PermissionOverwrite {
+            //             allow: USER_CHANNEL_PERMS,
+            //             deny: Permissions::empty(),
+            //             kind: PermissionOverwriteType::Member(player_discord_id),
+            //         },
+            //     )
+            //     .await?;
             discord_channel
                 .send_message(
                     discord_http,
