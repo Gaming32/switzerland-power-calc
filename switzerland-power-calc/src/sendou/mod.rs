@@ -31,6 +31,7 @@ use serenity::all::{
     PermissionOverwriteType, Permissions, UserId,
 };
 use serenity::futures::TryStreamExt;
+use serenity::model::Timestamp;
 use skillratings::Outcomes;
 use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2};
 use std::collections::{HashMap, HashSet};
@@ -1020,15 +1021,27 @@ async fn send_summaries_to_discord(
                 )
                 .await?;
         }
+        let allow_bulk_delete_timestamp =
+            Timestamp::from_unix_timestamp(Timestamp::now().unix_timestamp() - 60 * 60 * 24 * 13)
+                .unwrap();
         for messages in old_leaderboard_messages
             .into_iter()
-            .map(|x| x.id)
             .chunks(100)
             .into_iter()
+            .map(Itertools::collect_vec)
         {
-            leaderboard_channel
-                .delete_messages(discord_http.http(), messages)
-                .await?;
+            if messages
+                .iter()
+                .all(|x| x.timestamp > allow_bulk_delete_timestamp)
+            {
+                leaderboard_channel
+                    .delete_messages(discord_http.http(), messages)
+                    .await?;
+            } else {
+                for message in messages {
+                    message.delete(discord_http).await?;
+                }
+            }
         }
     }
 
