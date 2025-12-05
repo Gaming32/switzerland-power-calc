@@ -53,12 +53,11 @@ pub fn generate_leaderboard_messages(
         if message.len() + line.len() >= max_message_len {
             messages.push(message.clone());
             message.clear();
-        } else {
-            if !message.is_empty() {
-                message.push('\n');
-            }
-            message.push_str(&line);
         }
+        if !message.is_empty() {
+            message.push('\n');
+        }
+        message.push_str(&line);
     }
 
     messages.push(message);
