@@ -22,7 +22,7 @@ use chrono::Utc;
 use dashmap::DashMap;
 use itertools::Itertools;
 use reqwest::{Client as ReqwestClient, Url};
-use rustyline_async::{Readline, ReadlineError, ReadlineEvent};
+use rustyline_async::{Readline, ReadlineError, ReadlineEvent, SharedWriter};
 use serenity::FutureExt;
 use serenity::all::{
     ActivityData, CacheHttp, Channel, ChannelId, ChannelType, CommandId, CommandOptionType,
@@ -44,9 +44,10 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use std::{fs, io};
 use switzerland_power_animated::{AsyncAnimationGenerator, MatchOutcome, PowerStatus};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::oneshot;
 use tokio::time;
-use tokio::time::{MissedTickBehavior, sleep};
+use tokio::time::{Interval, MissedTickBehavior, sleep};
 use unic_emoji_char::is_emoji_presentation;
 
 use crate::error::ErrorKind;
@@ -471,76 +472,13 @@ async fn run_tournament(
     discord_channels: &DiscordChannelsMap,
     get_tournament: &impl GetTournamentFn,
 ) -> Result<()> {
-    enum Action {
-        Poll(bool),
-        SkipMatch(SendouId),
-        Error(io::Error),
-        Quit,
-    }
-    let (action_send, mut action_recv) = tokio::sync::mpsc::unbounded_channel();
-    let (mut rl, mut printer) = Readline::new("command> ".to_string())?;
-    {
-        let mut printer = printer.clone();
-        tokio::task::spawn(async move {
-            let mut run = async || -> io::Result<()> {
-                loop {
-                    let line = match rl.readline().await {
-                        Ok(ReadlineEvent::Line(line)) => line,
-                        Ok(ReadlineEvent::Eof) => break,
-                        Ok(ReadlineEvent::Interrupted) => {
-                            let _ = action_send.send(Action::Quit);
-                            break;
-                        }
-                        Err(ReadlineError::IO(err)) => return Err(err),
-                        Err(ReadlineError::Closed) => break,
-                    };
-                    let action = if line == "help" || line == "?" {
-                        writeln!(printer, "help")?;
-                        writeln!(printer, "   Prints this message")?;
-                        writeln!(printer, "?")?;
-                        writeln!(printer, "   Prints this message")?;
-                        writeln!(printer, "skip <match-id>")?;
-                        writeln!(printer, "   Ignores the specified match")?;
-                        writeln!(printer, "poll")?;
-                        writeln!(printer, "   Forces a recheck of sendou.ink")?;
-                        None
-                    } else if line.starts_with("skip ") {
-                        match line.strip_prefix("skip ").unwrap().parse() {
-                            Ok(id) => Some(Action::SkipMatch(id)),
-                            Err(err) => {
-                                writeln!(printer, "Invalid match ID: {err}")?;
-                                None
-                            }
-                        }
-                    } else if line == "poll" {
-                        Some(Action::Poll(true))
-                    } else {
-                        writeln!(printer, "Unknown or invalid command: {line}")?;
-                        writeln!(printer, "Type 'help' or '?' to see a list of commands")?;
-                        None
-                    };
-                    if let Some(action) = action
-                        && action_send.send(action).is_err()
-                    {
-                        break;
-                    }
-                }
-                Ok(())
-            };
-            if let Err(err) = run().await {
-                let _ = action_send.send(Action::Error(err));
-            }
-        });
-    }
+    let mut command_engine = CommandEngine::new()?;
 
     let mut completed_matches = HashSet::new();
-    let mut ignored_matches = HashSet::new();
     let mut ranked_players = RankVec::new(players.values().map(|x| x.rating).collect_vec());
 
     let animation_generator = AsyncAnimationGenerator::new().await?;
 
-    let mut interval = time::interval(POLL_TIME);
-    interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
     let new_players = loop {
         let tournament = get_tournament().await?;
         let (swiss_round_ids, swiss_round_count) = {
@@ -575,7 +513,7 @@ async fn run_tournament(
         let mut new_players = players.clone();
 
         for tourney_match in tournament.data.matches {
-            if ignored_matches.contains(&tourney_match.id) {
+            if command_engine.ignored_matches.contains(&tourney_match.id) {
                 continue;
             }
 
@@ -642,7 +580,7 @@ async fn run_tournament(
                 &Glicko2Config::default(),
             );
             if new_match {
-                writeln!(printer, "In match {}:", tourney_match.id)?;
+                writeln!(command_engine.printer, "In match {}:", tourney_match.id)?;
             }
             let mut update_player = async |opponent: Option<TournamentMatchOpponent>,
                                            team: &TournamentTeam,
@@ -664,7 +602,7 @@ async fn run_tournament(
                 let new_rank = ranked_players.insert_and_get_rank(player.rating) + 1;
 
                 writeln!(
-                    printer,
+                    command_engine.printer,
                     "  {}",
                     format_player_simply(Some(&old_player), player, false)
                 )?;
@@ -715,33 +653,127 @@ async fn run_tournament(
             break new_players;
         }
 
-        loop {
-            let action = tokio::select! {
-                _ = interval.tick() => Action::Poll(false),
-                action = action_recv.recv() => action.expect("Action input thread exited unexpectedly without Error"),
-            };
-            match action {
-                Action::Poll(forced) => {
-                    if forced {
-                        writeln!(printer, "Polling now")?;
-                    }
-                    break;
-                }
-                Action::SkipMatch(id) => {
-                    ignored_matches.insert(id);
-                    writeln!(printer, "Ignoring match {id}")?;
-                }
-                Action::Error(err) => return Err(err.into()),
-                Action::Quit => {
-                    writeln!(printer, "Force quitting now")?;
-                    exit(1);
-                }
-            }
-        }
+        command_engine.pump().await?;
     };
 
     *players = new_players;
     Ok(())
+}
+
+enum CommandEngineAction {
+    Poll(bool),
+    SkipMatch(SendouId),
+    Error(io::Error),
+    Quit,
+}
+
+struct CommandEngine {
+    action_recv: UnboundedReceiver<CommandEngineAction>,
+    printer: SharedWriter,
+    ignored_matches: HashSet<SendouId>,
+    interval: Interval,
+}
+
+impl CommandEngine {
+    fn new() -> Result<Self> {
+        let (action_send, action_recv) = tokio::sync::mpsc::unbounded_channel();
+        let (rl, printer) = Readline::new("command> ".to_string())?;
+        Self::start_task(rl, action_send, printer.clone());
+
+        let mut interval = time::interval(POLL_TIME);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+        Ok(Self {
+            action_recv,
+            printer,
+            ignored_matches: HashSet::new(),
+            interval,
+        })
+    }
+
+    fn start_task(
+        mut rl: Readline,
+        action_send: UnboundedSender<CommandEngineAction>,
+        mut printer: SharedWriter,
+    ) {
+        tokio::task::spawn(async move {
+            let mut run = async || -> io::Result<()> {
+                loop {
+                    let line = match rl.readline().await {
+                        Ok(ReadlineEvent::Line(line)) => line,
+                        Ok(ReadlineEvent::Eof) => break,
+                        Ok(ReadlineEvent::Interrupted) => {
+                            let _ = action_send.send(CommandEngineAction::Quit);
+                            break;
+                        }
+                        Err(ReadlineError::IO(err)) => return Err(err),
+                        Err(ReadlineError::Closed) => break,
+                    };
+                    let action = if line == "help" || line == "?" {
+                        writeln!(printer, "help")?;
+                        writeln!(printer, "   Prints this message")?;
+                        writeln!(printer, "?")?;
+                        writeln!(printer, "   Prints this message")?;
+                        writeln!(printer, "skip <match-id>")?;
+                        writeln!(printer, "   Ignores the specified match")?;
+                        writeln!(printer, "poll")?;
+                        writeln!(printer, "   Forces a recheck of sendou.ink")?;
+                        None
+                    } else if line.starts_with("skip ") {
+                        match line.strip_prefix("skip ").unwrap().parse() {
+                            Ok(id) => Some(CommandEngineAction::SkipMatch(id)),
+                            Err(err) => {
+                                writeln!(printer, "Invalid match ID: {err}")?;
+                                None
+                            }
+                        }
+                    } else if line == "poll" {
+                        Some(CommandEngineAction::Poll(true))
+                    } else {
+                        writeln!(printer, "Unknown or invalid command: {line}")?;
+                        writeln!(printer, "Type 'help' or '?' to see a list of commands")?;
+                        None
+                    };
+                    if let Some(action) = action
+                        && action_send.send(action).is_err()
+                    {
+                        break;
+                    }
+                }
+                Ok(())
+            };
+            if let Err(err) = run().await {
+                let _ = action_send.send(CommandEngineAction::Error(err));
+            }
+        });
+    }
+
+    async fn pump(&mut self) -> Result<()> {
+        loop {
+            let action = tokio::select! {
+                _ = self.interval.tick() => CommandEngineAction::Poll(false),
+                action = self.action_recv.recv() => action.expect("Action input thread exited unexpectedly without Error"),
+            };
+            match action {
+                CommandEngineAction::Poll(forced) => {
+                    if forced {
+                        writeln!(self.printer, "Polling now")?;
+                    }
+                    break;
+                }
+                CommandEngineAction::SkipMatch(id) => {
+                    self.ignored_matches.insert(id);
+                    writeln!(self.printer, "Ignoring match {id}")?;
+                }
+                CommandEngineAction::Error(err) => return Err(err.into()),
+                CommandEngineAction::Quit => {
+                    writeln!(self.printer, "Force quitting now")?;
+                    exit(1);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
