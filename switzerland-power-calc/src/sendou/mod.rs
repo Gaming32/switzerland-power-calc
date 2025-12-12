@@ -482,32 +482,31 @@ async fn run_tournament(
     let new_players = loop {
         let tournament = get_tournament().await?;
         let (swiss_round_ids, swiss_round_count) = {
-            let (swiss_stage, round_count) = tournament
-                .data
-                .stages
-                .iter()
-                .find_map(|x| {
-                    if let TournamentStageSettings::Swiss {
-                        swiss: TournamentStageSwissSettings { round_count },
-                    } = x.settings
-                    {
-                        Some((x.id, round_count))
-                    } else {
-                        None
-                    }
-                })
-                .unwrap();
-            (
-                tournament
-                    .data
-                    .rounds
-                    .iter()
-                    .filter(|x| x.stage_id == swiss_stage)
-                    .sorted_by_key(|x| x.number)
-                    .map(|x| (x.id, x.number))
-                    .collect_vec(),
-                round_count,
-            )
+            if let Some((swiss_stage, round_count)) = tournament.data.stages.iter().find_map(|x| {
+                if let TournamentStageSettings::Swiss {
+                    swiss: TournamentStageSwissSettings { round_count },
+                } = x.settings
+                {
+                    Some((x.id, round_count))
+                } else {
+                    None
+                }
+            }) {
+                (
+                    tournament
+                        .data
+                        .rounds
+                        .iter()
+                        .filter(|x| x.stage_id == swiss_stage)
+                        .sorted_by_key(|x| x.number)
+                        .map(|x| (x.id, x.number))
+                        .collect_vec(),
+                    round_count,
+                )
+            } else {
+                command_engine.pump().await?;
+                continue;
+            }
         };
 
         let mut new_players = players.clone();
