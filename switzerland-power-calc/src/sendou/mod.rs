@@ -4,14 +4,15 @@ pub mod lang;
 pub mod leaderboard;
 mod rank_set;
 pub mod schema;
+pub mod turbo_stream;
 mod types;
 
 use crate::db::{Database, PlayerId, SwitzerlandPlayer, SwitzerlandPlayerMap};
 use crate::sendou::discord::{DiscordEventHandler, DiscordHttp};
 use crate::sendou::lang::{CommandIdDisplay, Language};
 use crate::sendou::schema::{
-    MatchRoot, TournamentContext, TournamentData, TournamentMatch, TournamentMatchOpponent,
-    TournamentMatchResult, TournamentMatchStatus, TournamentRoot, TournamentStageSettings,
+    ToMatchResponse, ToResponse, TournamentContext, TournamentData, TournamentMatch,
+    TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus, TournamentStageSettings,
     TournamentStageSwissSettings, TournamentTeam,
 };
 use crate::sendou::types::{DiscordChannelsMap, GetTournamentFn, TeamsMap};
@@ -21,7 +22,7 @@ use crate::{
 use chrono::Utc;
 use dashmap::DashMap;
 use itertools::Itertools;
-use reqwest::{Client as ReqwestClient, Url};
+use reqwest::Client as ReqwestClient;
 use rustyline_async::{Readline, ReadlineError, ReadlineEvent, SharedWriter};
 use serenity::FutureExt;
 use serenity::all::{
@@ -55,6 +56,7 @@ pub use crate::migration::migration_cli;
 use crate::sendou::cli_helpers::print_seeding_instructions;
 use crate::sendou::leaderboard::generate_leaderboard_messages;
 use crate::sendou::rank_set::RankVec;
+use crate::sendou::turbo_stream::TurboStreamed;
 pub use schema::SendouId;
 
 const POLL_TIME: Duration = Duration::from_secs(10);
@@ -63,16 +65,14 @@ const USER_CHANNEL_PERMS: Permissions = Permissions::VIEW_CHANNEL
     .union(Permissions::USE_APPLICATION_COMMANDS);
 
 #[tokio::main]
-pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Result<()> {
+pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) -> Result<()> {
     if let Some(parent) = out_db.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let tournament_url = {
-        let mut url = Url::parse(tournament_url)?;
-        url.set_query(Some("_data=features/tournament/routes/to.$id"));
-        url
-    };
+    let tournament_url = format!(
+        "https://sendou.ink/to/{tournament_id}/register.data?_routes=features/tournament/routes/to.$id"
+    );
     let http_client = reqwest::ClientBuilder::new()
         .user_agent(concat!(
             env!("CARGO_PKG_NAME"),
@@ -133,12 +133,15 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_url: &str) -> Re
     let get_tournament = async || -> Result<_> {
         let real_get = async || {
             Ok(http_client
-                .get(tournament_url.clone())
+                .get(&tournament_url)
                 .send()
                 .await?
                 .error_for_status()?
-                .json::<TournamentRoot>()
+                .json::<TurboStreamed<ToResponse>>()
                 .await?
+                .0
+                .to
+                .data
                 .tournament)
         };
         for i in 1..=4 {
@@ -866,13 +869,16 @@ fn send_progress_message_to_player(
             if let PowerStatus::SetPlayed { matches, .. } = &mut power_status {
                 let match_results = http_client
                     .get(format!(
-                        "https://sendou.ink/to/{tourney_id}/matches/{set_id}?_data"
+                        "https://sendou.ink/to/{tourney_id}/matches/{set_id}.data?_routes=features/tournament-bracket/routes/to.$id.matches.$mid"
                     ))
                     .send()
                     .await?
                     .error_for_status()?
-                    .json::<MatchRoot>()
+                    .json::<TurboStreamed<ToMatchResponse>>()
                     .await?
+                    .0
+                    .to_match
+                    .data
                     .results;
                 for (i, result) in match_results.into_iter().enumerate() {
                     matches[i] = if result.winner_team_id == my_team_id {
