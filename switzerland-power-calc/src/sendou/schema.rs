@@ -7,6 +7,17 @@ use serde_with::{BoolFromInt, serde_as};
 pub type SendouId = u32;
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct ToResponse {
+    #[serde(rename = "features/tournament/routes/to.$id")]
+    pub to: DataWrapper<TournamentRoot>,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
+pub struct DataWrapper<T> {
+    pub data: T,
+}
+
+#[derive(Clone, Debug, Deserialize)]
 pub struct TournamentRoot {
     pub tournament: Tournament,
 }
@@ -137,6 +148,12 @@ pub struct TournamentTeamMember {
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub struct TournamentTeamCheckIn {}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct ToMatchResponse {
+    #[serde(rename = "features/tournament-bracket/routes/to.$id.matches.$mid")]
+    pub to_match: DataWrapper<MatchRoot>,
+}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct MatchRoot {

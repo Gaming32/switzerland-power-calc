@@ -6,7 +6,7 @@ mod sendou;
 use crate::db::{Database, SwitzerlandPlayer, SwitzerlandPlayerMap};
 use crate::migration::MigrationStyle;
 use crate::sendou::leaderboard::generate_leaderboard_messages;
-use crate::sendou::{migration_cli, sendou_cli};
+use crate::sendou::{SendouId, migration_cli, sendou_cli};
 use clap::Parser;
 use error::{Error, Result};
 use hashlink::LinkedHashMap;
@@ -63,7 +63,7 @@ enum Commands {
         /// The path to the database to create as a result
         out_db: PathBuf,
         /// The URL to the tournament on sendou.ink
-        tournament_url: String,
+        tournament_id: SendouId,
     },
     /// Migrate old string IDs to new Sendou-based IDs or to other names
     MigrateNames {
@@ -262,8 +262,8 @@ fn run(args: Args) -> Result<()> {
         Sendou {
             in_db,
             out_db,
-            tournament_url,
-        } => sendou_cli(&in_db, &out_db, &tournament_url)?,
+            tournament_id,
+        } => sendou_cli(&in_db, &out_db, tournament_id)?,
         MigrateNames {
             style,
             in_db,

@@ -1,6 +1,7 @@
 use crate::Result;
 use crate::db::{Database, PlayerId};
 use crate::sendou::schema::SendouUserRoot;
+use crate::sendou::turbo_stream::TurboStreamed;
 use ansi_term::Color;
 use itertools::Itertools;
 use reqwest::Client;
@@ -106,9 +107,10 @@ pub async fn migration_cli(
 
 async fn request_player_info(client: &Client, slug: &str) -> Result<SendouUserRoot> {
     Ok(client
-        .get(format!("https://sendou.ink/u/{slug}?_data"))
+        .get(format!("https://sendou.ink/u/{slug}.data"))
         .send()
         .await?
-        .json::<SendouUserRoot>()
-        .await?)
+        .json::<TurboStreamed<SendouUserRoot>>()
+        .await?
+        .0)
 }
