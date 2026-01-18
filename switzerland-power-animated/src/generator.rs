@@ -115,16 +115,15 @@ impl AnimationGenerator {
                 calculation_rounds,
                 calculation_rounds,
                 Some(power),
-                Some(rank),
+                rank,
             )?,
             PowerStatus::SetPlayed {
                 matches,
                 old_power,
                 new_power,
-                old_rank,
-                new_rank,
+                rank_change,
             } => {
-                self.generate_set_played(lang, matches, old_power, new_power, old_rank, new_rank)?;
+                self.generate_set_played(lang, matches, old_power, new_power, rank_change)?;
             }
         }
 
@@ -215,8 +214,7 @@ impl AnimationGenerator {
         matches: [MatchOutcome; 5],
         old_power: f64,
         new_power: f64,
-        old_rank: u32,
-        new_rank: u32,
+        rank_change: Option<(u32, u32)>,
     ) -> Result<()> {
         use power_progress_pane::*;
 
@@ -301,9 +299,12 @@ impl AnimationGenerator {
             30,
         )?;
 
-        state.animate(&power_progress_pane, WINDOW_OUT, 2)?;
-
-        self.generate_rank_change(lang, &mut state, old_rank, new_rank)?;
+        if let Some((old_rank, new_rank)) = rank_change {
+            state.animate(&power_progress_pane, WINDOW_OUT, 2)?;
+            self.generate_rank_change(lang, &mut state, old_rank, new_rank)?;
+        } else {
+            state.animate(&power_progress_pane, WINDOW_OUT, 90)?;
+        }
 
         state.push_frame(0);
         Ok(())

@@ -22,14 +22,21 @@ pub fn generate_leaderboard_messages(
     let down_arrow = get_arrow("DISCORD_DOWN_ARROW", "⇓");
     let right_arrow = get_arrow("DISCORD_RIGHT_ARROW", "⇒");
 
-    for (index, player) in new_db.players.iter().take(50).enumerate() {
+    for (index, player) in new_db
+        .players
+        .iter()
+        .filter(|p| p.show_rank())
+        .take(50)
+        .enumerate()
+    {
         let old_player = old_players.get(&player.id);
         let line = format!(
             "{}. {}{}{} with {:.1} SP",
             index + 1,
             match old_player
                 .filter(|x| player.rating != x.rating) // Don't show an arrow if they didn't play
-                .map(|x| player.unwrap_rank().cmp(&x.unwrap_rank()))
+                .and_then(|p| p.rank)
+                .map(|old_rank| player.rank.unwrap().cmp(&old_rank))
                 .or_else(|| old_player.is_none().then_some(Ordering::Less)) // Treat new players as if they went up in the ranks
             {
                 Some(Ordering::Equal) => &right_arrow,

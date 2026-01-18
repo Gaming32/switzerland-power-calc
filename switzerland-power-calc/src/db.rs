@@ -28,6 +28,8 @@ pub struct SwitzerlandPlayer {
     pub language: Option<Language>,
     #[serde(skip)]
     pub rank: Option<NonZeroU32>,
+    #[serde(default)]
+    pub hide_rank: bool,
     #[serde(flatten)]
     pub rating: Glicko2Rating,
     #[serde(skip)]
@@ -60,10 +62,8 @@ impl SwitzerlandPlayer {
         )
     }
 
-    pub fn unwrap_rank(&self) -> u32 {
-        self.rank
-            .expect("unwrap_rank() called on uninitialized rank")
-            .get()
+    pub fn show_rank(&self) -> bool {
+        !self.hide_rank
     }
 
     pub fn descending_rating_order_cmp(&self, other: &Self) -> Ordering {
@@ -113,8 +113,15 @@ impl Database {
     }
 
     fn init_rank(&mut self) {
-        for (i, player) in self.players.iter_mut().enumerate() {
-            player.rank = NonZeroU32::new((i + 1) as u32);
+        let mut rank = 1;
+        for player in self.players.iter_mut() {
+            if player.show_rank() {
+                player.rank =
+                    Some(NonZeroU32::new(rank).expect("Why are there 4 billion players?"));
+                rank += 1;
+            } else {
+                player.rank = None;
+            }
         }
     }
 
@@ -136,19 +143,12 @@ impl Database {
         Ok(())
     }
 
-    pub fn query(
-        mut self,
-        queries: Option<&Vec<String>>,
+    pub fn for_each_matching_mut(
+        &mut self,
+        queries: &Vec<String>,
         allow_sendou_id: bool,
-    ) -> Vec<SwitzerlandPlayer> {
-        if self.players.is_empty() {
-            return self.players;
-        }
-        let Some(queries) = queries else {
-            return self.players;
-        };
-
-        let mut results = Vec::with_capacity(queries.len());
+        mut action: impl FnMut(&mut Self, usize),
+    ) {
         for query in queries {
             let closest_match = allow_sendou_id
                 .then(|| query.parse::<SendouId>().ok())
@@ -168,10 +168,27 @@ impl Database {
                     })
                 });
             if let Some(index) = closest_match {
-                results.push(self.players.remove(index));
+                action(self, index);
             }
         }
-        results.sort_by_key(|x| x.rank);
+    }
+
+    pub fn query(
+        mut self,
+        queries: Option<&Vec<String>>,
+        allow_sendou_id: bool,
+    ) -> Vec<SwitzerlandPlayer> {
+        if self.players.is_empty() {
+            return self.players;
+        }
+        let Some(queries) = queries else {
+            return self.players;
+        };
+
+        let mut results = Vec::with_capacity(queries.len());
+        self.for_each_matching_mut(queries, allow_sendou_id, |db, idx| {
+            results.push(db.players.remove(idx))
+        });
         results
     }
 }

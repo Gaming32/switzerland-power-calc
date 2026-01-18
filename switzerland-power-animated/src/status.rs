@@ -7,14 +7,13 @@ pub enum PowerStatus {
     Calculated {
         calculation_rounds: u32,
         power: f64,
-        rank: u32,
+        rank: Option<u32>,
     },
     SetPlayed {
         matches: [MatchOutcome; 5],
         old_power: f64,
         new_power: f64,
-        old_rank: u32,
-        new_rank: u32,
+        rank_change: Option<(u32, u32)>,
     },
 }
 

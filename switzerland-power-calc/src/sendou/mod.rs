@@ -478,7 +478,13 @@ async fn run_tournament(
     let mut command_engine = CommandEngine::new()?;
 
     let mut completed_matches = HashSet::new();
-    let mut ranked_players = RankVec::new(players.values().map(|x| x.rating).collect_vec());
+    let mut ranked_players = RankVec::new(
+        players
+            .values()
+            .filter(|p| p.show_rank())
+            .map(|p| p.rating)
+            .collect_vec(),
+    );
 
     let animation_generator = AsyncAnimationGenerator::new().await?;
 
@@ -528,7 +534,13 @@ async fn run_tournament(
                     .and_then(|team| {
                         let player_id = PlayerId::Sendou(team.members.first().unwrap().user_id);
                         let player = new_players.get(&player_id)?;
-                        Some((team, player_id, player.rating, player.language.unwrap()))
+                        Some((
+                            team,
+                            player_id,
+                            player.rating,
+                            player.show_rank(),
+                            player.language.unwrap(),
+                        ))
                     })
                     .unwrap()
             };
@@ -540,8 +552,7 @@ async fn run_tournament(
                     continue;
                 }
                 let opponent = tourney_match.opponent1.or(tourney_match.opponent2);
-                let (team, player, rating, language) = get_player(&opponent);
-                let rank = ranked_players.get_rank(rating) + 1;
+                let (team, player, rating, show_rank, language) = get_player(&opponent);
                 send_progress_message_to_player(
                     http_client,
                     http,
@@ -559,8 +570,10 @@ async fn run_tournament(
                     opponent.unwrap(),
                     rating,
                     rating,
-                    rank,
-                    rank,
+                    show_rank.then(|| {
+                        let rank = ranked_players.get_rank(rating) + 1;
+                        (rank, rank)
+                    }),
                     language,
                 )?;
                 continue;
@@ -570,8 +583,10 @@ async fn run_tournament(
                 continue;
             }
             let new_match = completed_matches.insert(tourney_match.id);
-            let (team1, player1, rating1, language1) = get_player(&tourney_match.opponent1);
-            let (team2, player2, rating2, language2) = get_player(&tourney_match.opponent2);
+            let (team1, player1, rating1, show_rank1, language1) =
+                get_player(&tourney_match.opponent1);
+            let (team2, player2, rating2, show_rank2, language2) =
+                get_player(&tourney_match.opponent2);
             let (new_rating1, new_rating2) = glicko2(
                 &rating1,
                 &rating2,
@@ -589,6 +604,7 @@ async fn run_tournament(
                                            other_team: &TournamentTeam,
                                            player,
                                            new_rating,
+                                           show_rank: bool,
                                            language|
                    -> Result<()> {
                 let player = new_players.get_mut(player).unwrap();
@@ -600,8 +616,11 @@ async fn run_tournament(
                     return Ok(());
                 }
 
-                let old_rank = ranked_players.get_rank_and_remove(old_player.rating) + 1;
-                let new_rank = ranked_players.insert_and_get_rank(player.rating) + 1;
+                let rank_change = show_rank.then(|| {
+                    let old_rank = ranked_players.get_rank_and_remove(old_player.rating) + 1;
+                    let new_rank = ranked_players.insert_and_get_rank(player.rating) + 1;
+                    (old_rank, new_rank)
+                });
 
                 writeln!(
                     command_engine.printer,
@@ -625,8 +644,7 @@ async fn run_tournament(
                     opponent.unwrap(),
                     old_player.rating,
                     player.rating,
-                    old_rank,
-                    new_rank,
+                    rank_change,
                     language,
                 )?;
                 Ok(())
@@ -637,6 +655,7 @@ async fn run_tournament(
                 team2,
                 &player1,
                 new_rating1,
+                show_rank1,
                 language1,
             )
             .await?;
@@ -646,6 +665,7 @@ async fn run_tournament(
                 team1,
                 &player2,
                 new_rating2,
+                show_rank2,
                 language2,
             )
             .await?;
@@ -796,8 +816,7 @@ fn send_progress_message_to_player(
     my_result: TournamentMatchOpponent,
     old_rating: Glicko2Rating,
     new_rating: Glicko2Rating,
-    old_rank: usize,
-    new_rank: usize,
+    rank_change: Option<(usize, usize)>,
     original_language: Language,
 ) -> Result<()> {
     let Some(discord_channel) = discord_channels.get(&team.id).copied() else {
@@ -816,7 +835,7 @@ fn send_progress_message_to_player(
             PowerStatus::Calculated {
                 calculation_rounds: swiss_round_count,
                 power: new_rating.rating,
-                rank: new_rank as u32,
+                rank: rank_change.map(|(_, new)| new as u32),
             }
         }
     } else if other_team.is_some() {
@@ -825,8 +844,7 @@ fn send_progress_message_to_player(
             matches: Default::default(),
             old_power: old_rating.rating,
             new_power: new_rating.rating,
-            old_rank: old_rank as u32,
-            new_rank: new_rank as u32,
+            rank_change: rank_change.map(|(old, new)| (old as u32, new as u32)),
         }
     } else {
         return Ok(());
