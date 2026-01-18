@@ -2,19 +2,21 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_repr::Deserialize_repr;
 use serde_with::DefaultOnNull;
-use serde_with::{BoolFromInt, serde_as};
+use serde_with::{BoolFromInt, json::JsonString, serde_as};
 
 pub type SendouId = u32;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ToResponse {
     #[serde(rename = "features/tournament/routes/to.$id")]
-    pub to: DataWrapper<TournamentRoot>,
+    pub to: TournamentDataWrapper,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
-pub struct DataWrapper<T> {
-    pub data: T,
+#[serde_as]
+#[derive(Clone, Debug, Deserialize)]
+pub struct TournamentDataWrapper {
+    #[serde_as(as = "JsonString")]
+    pub data: TournamentRoot,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -152,7 +154,12 @@ pub struct TournamentTeamCheckIn {}
 #[derive(Clone, Debug, Deserialize)]
 pub struct ToMatchResponse {
     #[serde(rename = "features/tournament-bracket/routes/to.$id.matches.$mid")]
-    pub to_match: DataWrapper<MatchRoot>,
+    pub to_match: MatchDataWrapper,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct MatchDataWrapper {
+    pub data: MatchRoot,
 }
 
 #[derive(Clone, Debug, Deserialize)]
