@@ -271,15 +271,15 @@ fn initialize_teams<'a>(
     let mut teams = HashMap::new();
     for team in &tournament_context.teams {
         let player = team.members.first().expect("Sendou team has no members");
-        let starting_rating = team.avg_seeding_skill_ordinal.clamp(6.0, 60.0);
+        let starting_rating = team.avg_seeding_skill_ordinal.clamp(6.0, 60.0) - 20.0;
         teams.insert(team.id, team);
         players
             .entry(PlayerId::Sendou(player.user_id))
             .or_insert_with(|| SwitzerlandPlayer {
                 id: PlayerId::Sendou(player.user_id),
                 rating: Glicko2Rating {
-                    rating: starting_rating,
-                    deviation: 912.5 - starting_rating * 0.375,
+                    rating: starting_rating * 10.0 + 1500.0,
+                    deviation: 350.0 - starting_rating.abs() * 3.75,
                     ..Default::default()
                 },
                 unrated: true,
