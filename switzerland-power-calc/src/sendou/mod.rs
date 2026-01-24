@@ -271,7 +271,7 @@ fn initialize_teams<'a>(
     let mut teams = HashMap::new();
     for team in &tournament_context.teams {
         let player = team.members.first().expect("Sendou team has no members");
-        let starting_rating = (team.avg_seeding_skill_ordinal - 20.0).clamp(-10.0, 40.0);
+        let starting_rating = team.avg_seeding_skill_ordinal.clamp(-10.0, 40.0);
         teams.insert(team.id, team);
         players
             .entry(PlayerId::Sendou(player.user_id))
