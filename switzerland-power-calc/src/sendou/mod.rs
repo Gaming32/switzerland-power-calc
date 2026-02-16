@@ -12,8 +12,9 @@ use crate::sendou::discord::{DiscordEventHandler, DiscordHttp};
 use crate::sendou::lang::{CommandIdDisplay, Language};
 use crate::sendou::schema::{
     ToMatchResponse, ToResponse, TournamentContext, TournamentData, TournamentMatch,
-    TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus, TournamentStageSettings,
-    TournamentStageSwissSettings, TournamentTeam,
+    TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus,
+    TournamentRoundMapsMatchType, TournamentStageSettings, TournamentStageSwissSettings,
+    TournamentTeam,
 };
 use crate::sendou::types::{DiscordChannelsMap, GetTournamentFn, TeamsMap};
 use crate::{
@@ -515,12 +516,42 @@ async fn run_tournament(
                 continue;
             }
         };
+        let rounds: HashMap<_, _> = tournament
+            .data
+            .rounds
+            .iter()
+            .map(|round| (round.id, round))
+            .collect();
 
         let mut new_players = players.clone();
 
         for tourney_match in tournament.data.matches {
             if command_engine.ignored_matches.contains(&tourney_match.id) {
                 continue;
+            }
+
+            let match_round = rounds[&tourney_match.round_id];
+            if tourney_match
+                .opponent1
+                .is_some_and(|o| o.result == Some(TournamentMatchResult::Win))
+                || tourney_match
+                    .opponent2
+                    .is_some_and(|o| o.result == Some(TournamentMatchResult::Win))
+            {
+                let score1 = tourney_match.opponent1.unwrap().score;
+                let score2 = tourney_match.opponent2.unwrap().score;
+                let match_ended_normally = match match_round.maps.match_type {
+                    TournamentRoundMapsMatchType::BestOf => {
+                        let over_at_wins = match_round.maps.count.div_ceil(2);
+                        score1 == over_at_wins || score2 == over_at_wins
+                    }
+                    TournamentRoundMapsMatchType::PlayAll => {
+                        score1 + score2 == match_round.maps.count
+                    }
+                };
+                if !match_ended_normally {
+                    continue;
+                }
             }
 
             let calc_round = swiss_round_ids

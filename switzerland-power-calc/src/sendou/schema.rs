@@ -76,10 +76,25 @@ pub struct TournamentGroup {
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub struct TournamentRound {
-    pub id: SendouId,
     pub group_id: SendouId,
+    pub id: SendouId,
     pub number: u32,
     pub stage_id: SendouId,
+    pub maps: TournamentRoundMaps,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
+pub struct TournamentRoundMaps {
+    pub count: u32,
+    #[serde(rename = "type")]
+    pub match_type: TournamentRoundMapsMatchType,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TournamentRoundMapsMatchType {
+    BestOf,
+    PlayAll,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
@@ -94,6 +109,8 @@ pub struct TournamentMatch {
 #[derive(Copy, Clone, Debug, Deserialize)]
 pub struct TournamentMatchOpponent {
     pub id: Option<SendouId>,
+    #[serde(default)]
+    pub score: u32,
     pub result: Option<TournamentMatchResult>,
 }
 
