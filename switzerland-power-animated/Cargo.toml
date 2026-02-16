@@ -29,7 +29,7 @@ parse-format = "0.1.0"
 [package.metadata.vcpkg]
 dependencies = ["sdl2", "sdl2-image", "sdl2-ttf"]
 git = "https://github.com/microsoft/vcpkg"
-rev = "2025.09.17" # release 2024.05.24 # to check for a new one, check https://github.com/microsoft/vcpkg/releases
+rev = "2026.01.16" # to check for a new one, check https://github.com/microsoft/vcpkg/releases
 
 [package.metadata.vcpkg.target]
 x86_64-pc-windows-msvc = { triplet = "x64-windows-static-md" }
