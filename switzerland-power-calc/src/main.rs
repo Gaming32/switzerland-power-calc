@@ -1,3 +1,4 @@
+mod counts;
 mod db;
 mod error;
 mod migration;

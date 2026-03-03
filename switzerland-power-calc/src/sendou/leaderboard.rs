@@ -1,3 +1,4 @@
+use crate::counts::leaderboard_count;
 use crate::db::{Database, PlayerId, SwitzerlandPlayerMap};
 use crate::sendou::{env_str, format_link};
 use serenity::all::{Mentionable, UserId};
@@ -26,7 +27,7 @@ pub fn generate_leaderboard_messages(
         .players
         .iter()
         .filter(|p| p.show_rank())
-        .take(50)
+        .take(leaderboard_count(new_db.players.len()))
         .enumerate()
     {
         let old_player = old_players.get(&player.id);

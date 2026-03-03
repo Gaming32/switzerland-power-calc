@@ -52,6 +52,7 @@ use tokio::time;
 use tokio::time::{Interval, MissedTickBehavior, sleep};
 use unic_emoji_char::is_emoji_presentation;
 
+use crate::counts::show_placement_count;
 use crate::error::ErrorKind;
 pub use crate::migration::migration_cli;
 use crate::sendou::cli_helpers::print_seeding_instructions;
@@ -486,6 +487,7 @@ async fn run_tournament(
     );
 
     let animation_generator = AsyncAnimationGenerator::new().await?;
+    let show_placement_count = show_placement_count(players.len());
 
     let new_players = loop {
         let tournament = get_tournament().await?;
@@ -599,10 +601,12 @@ async fn run_tournament(
                     opponent.unwrap(),
                     rating,
                     rating,
-                    show_rank.then(|| {
-                        let rank = ranked_players.get_rank(rating) + 1;
-                        (rank, rank)
-                    }),
+                    show_rank
+                        .then(|| {
+                            let rank = ranked_players.get_rank(rating) + 1;
+                            (rank <= show_placement_count).then_some((rank, rank))
+                        })
+                        .flatten(),
                     language,
                 )?;
                 continue;
@@ -645,11 +649,14 @@ async fn run_tournament(
                     return Ok(());
                 }
 
-                let rank_change = show_rank.then(|| {
-                    let old_rank = ranked_players.get_rank_and_remove(old_player.rating) + 1;
-                    let new_rank = ranked_players.insert_and_get_rank(player.rating) + 1;
-                    (old_rank, new_rank)
-                });
+                let rank_change = show_rank
+                    .then(|| {
+                        let old_rank = ranked_players.get_rank_and_remove(old_player.rating) + 1;
+                        let new_rank = ranked_players.insert_and_get_rank(player.rating) + 1;
+                        (old_rank <= show_placement_count || new_rank <= show_placement_count)
+                            .then_some((old_rank, new_rank))
+                    })
+                    .flatten();
 
                 writeln!(
                     command_engine.printer,
