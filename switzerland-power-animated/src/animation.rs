@@ -1,7 +1,7 @@
 // Inspired by https://github.com/KillzXGaming/Switch-Toolbox/tree/master/Switch_Toolbox_Library/Animations/AnimationRewrite
 
-use crate::Result;
 use crate::layout::{BuiltPane, Pane};
+use std::ops::RangeInclusive;
 
 #[derive(Copy, Clone, Debug)]
 pub struct Keyframe {
@@ -30,8 +30,11 @@ impl AnimationTrack {
         Self { keyframes }
     }
 
-    pub fn duration(&self) -> f64 {
-        self.keyframes.last().map_or(0.0, |x| x.frame)
+    pub const fn duration(&self) -> f64 {
+        match self.keyframes.last() {
+            Some(frame) => frame.frame,
+            None => 0.0,
+        }
     }
 
     pub fn ending_value(&self) -> f64 {
@@ -76,61 +79,43 @@ impl AnimationTrack {
 #[derive(Copy, Clone, Debug)]
 pub struct AnimationSet<const N: usize> {
     elements: [AnimationSetElement; N],
+    duration: u32,
 }
 
 impl<const N: usize> AnimationSet<N> {
     pub const fn new(elements: [AnimationSetElement; N]) -> Self {
-        Self { elements }
+        // We do love const limitations
+        let mut duration = 0;
+        let mut i = 0;
+        while i < N {
+            let animations = elements[i].animations;
+            let mut j = 0;
+            while j < animations.len() {
+                let new_duration = animations[j].1.duration().ceil() as u32;
+                if new_duration > duration {
+                    duration = new_duration;
+                }
+                j += 1;
+            }
+            i += 1;
+        }
+
+        Self { elements, duration }
     }
 
-    pub fn animate(
-        &self,
-        render_pane: &BuiltPane,
-        origin_pane: &BuiltPane,
-        end_delay: u32,
-        mut render_frame: impl FnMut(&BuiltPane, u32) -> Result<()>,
-    ) -> Result<()> {
-        struct ResolvedElement {
-            pane: BuiltPane,
-            animations: &'static [(AnimatableParameter, AnimationTrack)],
-        }
-        let elements = self.elements.map(|element| {
-            let pane = origin_pane
-                .child(element.path)
-                .unwrap_or_else(|| panic!("Missing animation element {:?}", element.path));
-            ResolvedElement {
-                pane,
-                animations: element.animations,
-            }
-        });
-        let duration = elements
-            .iter()
-            .flat_map(|x| x.animations)
-            .map(|(_, anim)| anim.duration().ceil() as u32)
-            .max()
-            .expect("No elements in AnimationSet");
-
-        for frame in 0..=duration {
-            for element in elements.iter() {
-                element.pane.edit(|pane| {
-                    for (parameter, animation) in element.animations {
-                        parameter.set_value(pane, animation.value_at(frame as f64));
-                    }
-                });
-            }
-            render_frame(render_pane, 1)?;
-        }
-
-        for element in elements.iter() {
-            element.pane.edit(|pane| {
-                for (parameter, animation) in element.animations {
-                    parameter.set_value(pane, animation.ending_value());
+    pub fn animate(&self, origin_pane: &BuiltPane) -> AnimationAnimator<N> {
+        AnimationAnimator {
+            elements: self.elements.map(|element| {
+                let pane = origin_pane
+                    .child(element.path)
+                    .unwrap_or_else(|| panic!("Missing animation element {:?}", element.path));
+                ActiveElement {
+                    pane,
+                    animations: element.animations,
                 }
-            });
+            }),
+            frame_iter: Some(0..=self.duration),
         }
-        render_frame(render_pane, end_delay)?;
-
-        Ok(())
     }
 }
 
@@ -172,6 +157,49 @@ impl AnimatableParameter {
             AnimatableParameter::ScaleX => pane.scale.0 = value,
             AnimatableParameter::ScaleY => pane.scale.1 = value,
             AnimatableParameter::Alpha => pane.alpha = value as u8,
+        }
+    }
+}
+
+pub trait ActiveAnimator {
+    fn advance_frame(&mut self, new_animators: &mut Vec<Box<dyn ActiveAnimator>>) -> bool;
+}
+
+pub struct AnimationAnimator<const N: usize> {
+    elements: [ActiveElement; N],
+    frame_iter: Option<RangeInclusive<u32>>,
+}
+
+struct ActiveElement {
+    pane: BuiltPane,
+    animations: &'static [(AnimatableParameter, AnimationTrack)],
+}
+
+impl<const N: usize> ActiveAnimator for AnimationAnimator<N> {
+    fn advance_frame(&mut self, new_animators: &mut Vec<Box<dyn ActiveAnimator>>) -> bool {
+        let _ = new_animators;
+        let Some(iter) = &mut self.frame_iter else {
+            return false;
+        };
+        if let Some(frame) = iter.next() {
+            for element in self.elements.iter() {
+                element.pane.edit(|pane| {
+                    for (parameter, animation) in element.animations {
+                        parameter.set_value(pane, animation.value_at(frame as f64));
+                    }
+                });
+            }
+            true
+        } else {
+            for element in self.elements.iter() {
+                element.pane.edit(|pane| {
+                    for (parameter, animation) in element.animations {
+                        parameter.set_value(pane, animation.ending_value());
+                    }
+                });
+            }
+            self.frame_iter = None;
+            false
         }
     }
 }

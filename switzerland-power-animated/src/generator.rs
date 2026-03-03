@@ -1,4 +1,4 @@
-use crate::animation::AnimationSet;
+use crate::animation::{ActiveAnimator, AnimationSet};
 use crate::font::FontSet;
 use crate::layout::BuiltPane;
 use crate::panes::{calc_rank_pane, power_progress_pane};
@@ -70,6 +70,7 @@ impl AnimationGenerator {
             state: RefCell::new(GeneratorState {
                 canvas: Surface::new(WIDTH, HEIGHT, PIXEL_FORMAT)?.into_canvas()?,
                 scratch_surface: Surface::new(WIDTH, HEIGHT, PIXEL_FORMAT)?,
+                active_animations: vec![],
                 frames: vec![],
             }),
 
@@ -104,26 +105,36 @@ impl AnimationGenerator {
     ) -> Result<FramesVec> {
         match status {
             PowerStatus::Calculating { progress, total } => {
-                self.generate_calculating(lang, progress, total, None, None)?
+                self.generate_calculating(lang, progress, total, None, None, 0)?
             }
             PowerStatus::Calculated {
                 calculation_rounds,
                 power,
                 rank,
+                top_rank,
             } => self.generate_calculating(
                 lang,
                 calculation_rounds,
                 calculation_rounds,
                 Some(power),
                 rank,
+                top_rank,
             )?,
             PowerStatus::SetPlayed {
                 matches,
                 old_power,
                 new_power,
                 rank_change,
+                top_rank,
             } => {
-                self.generate_set_played(lang, matches, old_power, new_power, rank_change)?;
+                self.generate_set_played(
+                    lang,
+                    matches,
+                    old_power,
+                    new_power,
+                    rank_change,
+                    top_rank,
+                )?;
             }
         }
 
@@ -137,6 +148,7 @@ impl AnimationGenerator {
         total: u32,
         calculated_power: Option<f64>,
         estimated_rank: Option<u32>,
+        top_rank: u32,
     ) -> Result<()> {
         use calc_rank_pane::*;
 
@@ -199,7 +211,12 @@ impl AnimationGenerator {
                 .set_text(lang.rank_value(estimated_rank));
 
             state.animate(&calc_rank_pane, WINDOW_IN, 6)?;
-            state.animate(&calc_rank_pane, RESULT_RANK_IN, 120)?;
+
+            state.add_animation(RESULT_RANK_IN.animate(&calc_rank_pane));
+            if estimated_rank <= top_rank {
+                state.add_animation(RESULT_TOP_IN.animate(&calc_rank_pane));
+            }
+            state.run_animations_to_completion(&calc_rank_pane, 120)?;
         }
 
         state.animate(&calc_rank_pane, WINDOW_OUT, 90)?;
@@ -215,6 +232,7 @@ impl AnimationGenerator {
         old_power: f64,
         new_power: f64,
         rank_change: Option<(u32, u32)>,
+        top_rank: u32,
     ) -> Result<()> {
         use power_progress_pane::*;
 
@@ -265,7 +283,7 @@ impl AnimationGenerator {
 
             state.animate_specific_pane(&power_progress_pane, animation_pane, WIN_LOSE_IN, 0)?;
         }
-        state.push_frame(60);
+        state.extend_last_frame(60);
 
         set_score_text.set_text(format!("{wins} - {losses}"));
         state.animate(&power_progress_pane, SET_SCORE_IN, 60)?;
@@ -289,19 +307,19 @@ impl AnimationGenerator {
             .set_text(power_change);
         state.animate(&power_progress_pane, POWER_ADD, 1)?;
 
-        state.animate_value_change(
-            &power_progress_pane,
+        state.start_animate_value_change(
             &power_value_text,
             old_power,
             new_power,
             |distance| distance.powf(0.1).clamp(distance / 180.0, distance / 60.0),
-            |power| lang.power_value(power),
-            30,
-        )?;
+            move |power| lang.power_value(power),
+            None,
+        );
+        state.run_animations_to_completion(&power_progress_pane, 30)?;
 
         if let Some((old_rank, new_rank)) = rank_change {
             state.animate(&power_progress_pane, WINDOW_OUT, 2)?;
-            self.generate_rank_change(lang, &mut state, old_rank, new_rank)?;
+            self.generate_rank_change(lang, &mut state, old_rank, new_rank, top_rank)?;
         } else {
             state.animate(&power_progress_pane, WINDOW_OUT, 90)?;
         }
@@ -316,6 +334,7 @@ impl AnimationGenerator {
         state: &mut GeneratorState,
         old_rank: u32,
         new_rank: u32,
+        top_rank: u32,
     ) -> Result<()> {
         use calc_rank_pane::*;
 
@@ -362,15 +381,18 @@ impl AnimationGenerator {
 
         state.animate(&calc_rank_pane, WINDOW_IN, 0)?;
 
-        state.animate_value_change(
-            &calc_rank_pane,
+        state.start_animate_value_change(
             &inner_rank_pane.immediate_child("rank_value_text").unwrap(),
             old_rank as f64,
             new_rank as f64,
             |distance| distance / 120.0,
-            |rank| lang.rank_value(rank.round() as u32),
-            120,
-        )?;
+            move |rank| lang.rank_value(rank.round() as u32),
+            Some((
+                top_rank as f64,
+                Box::new(RESULT_TOP_IN.animate(&calc_rank_pane)),
+            )),
+        );
+        state.run_animations_to_completion(&calc_rank_pane, 120)?;
 
         state.animate(&calc_rank_pane, WINDOW_OUT, 90)?;
 
@@ -383,6 +405,7 @@ pub(crate) type FramesVec = Vec<(Vec<u8>, u32)>;
 struct GeneratorState {
     canvas: SurfaceCanvas<'static>,
     scratch_surface: Surface<'static>,
+    active_animations: Vec<Box<dyn ActiveAnimator>>,
     frames: FramesVec,
 }
 
@@ -403,50 +426,98 @@ impl GeneratorState {
         animation: AnimationSet<N>,
         end_delay: u32,
     ) -> Result<()> {
-        animation.animate(render_pane, origin_pane, end_delay, |pane, duration| {
-            self.render_frame(pane, duration)
-        })
+        self.add_animation(animation.animate(origin_pane));
+        self.run_animations_to_completion(render_pane, end_delay)
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn animate_value_change(
+    fn start_animate_value_change(
         &mut self,
-        render_pane: &BuiltPane,
         value_pane: &BuiltPane,
         old_value: f64,
         new_value: f64,
         change_per_frame: impl FnOnce(f64) -> f64,
-        formatter: impl Fn(f64) -> String,
-        end_delay: u32,
-    ) -> Result<()> {
-        let distance = (new_value - old_value).abs();
-        let change_per_frame = change_per_frame(distance);
+        formatter: impl Fn(f64) -> String + 'static,
+        hook: Option<(f64, Box<dyn ActiveAnimator>)>,
+    ) {
+        struct ValueChangeAnimator<F> {
+            value_pane: BuiltPane,
+            new_value: f64,
+            change_per_frame: f64,
+            order: Ordering,
+            display_value: f64,
+            formatter: F,
+            hook: Option<(f64, Box<dyn ActiveAnimator>)>,
+            done: bool,
+        }
 
-        let mut render = |value, duration| {
-            value_pane.set_text(formatter(value));
-            self.render_frame(render_pane, duration)
-        };
-
-        let mut display_value = old_value;
-        if new_value >= old_value {
-            loop {
-                display_value += change_per_frame;
-                if display_value >= new_value {
-                    break;
+        impl<F> ActiveAnimator for ValueChangeAnimator<F>
+        where
+            F: Fn(f64) -> String,
+        {
+            fn advance_frame(&mut self, new_animators: &mut Vec<Box<dyn ActiveAnimator>>) -> bool {
+                let _ = new_animators;
+                if self.done {
+                    return false;
                 }
-                render(display_value, 1)?;
-            }
-        } else {
-            loop {
-                display_value -= change_per_frame;
-                if display_value <= new_value {
-                    break;
+                self.display_value += self.change_per_frame;
+                if matches_order(self.display_value, self.new_value, self.order) {
+                    self.value_pane.set_text((self.formatter)(self.new_value));
+                    self.done = true;
+                } else {
+                    self.value_pane
+                        .set_text((self.formatter)(self.display_value));
+                    if let Some((hook_val, hook)) = mem::take(&mut self.hook) {
+                        if matches_order(self.display_value, hook_val, self.order) {
+                            new_animators.push(hook);
+                        } else {
+                            self.hook = Some((hook_val, hook));
+                        }
+                    }
                 }
-                render(display_value, 1)?;
+                !self.done
             }
         }
-        render(new_value, end_delay)?;
 
+        fn matches_order(a: f64, b: f64, order: Ordering) -> bool {
+            let found_order = a.total_cmp(&b);
+            found_order.is_eq() || found_order == order
+        }
+
+        self.add_animation(ValueChangeAnimator {
+            value_pane: value_pane.clone(),
+            new_value,
+            change_per_frame: change_per_frame(new_value - old_value),
+            order: new_value.total_cmp(&old_value),
+            display_value: old_value,
+            formatter,
+            hook,
+            done: false,
+        });
+    }
+
+    fn add_animation<A: ActiveAnimator + 'static>(&mut self, animator: A) {
+        self.active_animations.push(Box::new(animator));
+    }
+
+    fn step_all_animations(&mut self, render_pane: &BuiltPane) -> Result<bool> {
+        let mut new_animations = vec![];
+        self.active_animations
+            .retain_mut(|anim| anim.advance_frame(&mut new_animations));
+        self.active_animations.extend(new_animations);
+        self.render_frame(render_pane, 1)?;
+        Ok(!self.active_animations.is_empty())
+    }
+
+    fn run_animations_to_completion(
+        &mut self,
+        render_pane: &BuiltPane,
+        end_delay: u32,
+    ) -> Result<()> {
+        while self.step_all_animations(render_pane)? {}
+        if end_delay > 0 {
+            self.extend_last_frame(end_delay - 1);
+        }
         Ok(())
     }
 
@@ -468,6 +539,13 @@ impl GeneratorState {
             self.canvas.surface().without_lock().unwrap().into(),
             duration_frames,
         ));
+    }
+
+    fn extend_last_frame(&mut self, frames: u32) {
+        self.frames
+            .last_mut()
+            .expect("Called extend_frames without frames")
+            .1 += frames;
     }
 }
 

@@ -151,6 +151,8 @@ enum ParsedPowerStatus {
         /// The estimated player rank
         #[arg(value_parser = clap::value_parser!(u32).range(1..))]
         rank: Option<u32>,
+        /// The rank required for a player to be considered "top"
+        top_rank: Option<u32>,
     },
     /// Generate a set played complete animation
     #[clap(disable_help_flag = true)]
@@ -159,8 +161,8 @@ enum ParsedPowerStatus {
         old_power: f64,
         /// The updated Switzerland Power
         new_power: f64,
-        /// The previous estimated player rank
-        #[arg(short, long, num_args = 2, value_parser = clap::value_parser!(u32).range(1..))]
+        /// The previous estimated player rank, new estimated rank, and rank considered to be "top"
+        #[arg(short, long, num_args = 3, value_parser = clap::value_parser!(u32).range(1..))]
         rank_change: Option<Vec<u32>>,
         /// The matches that are won or lost
         #[arg(value_enum, num_args(2..=5))]
@@ -179,10 +181,12 @@ impl From<ParsedPowerStatus> for PowerStatus {
                 round_count,
                 power,
                 rank,
+                top_rank,
             } => PowerStatus::Calculated {
                 calculation_rounds: round_count as u32,
                 power,
                 rank,
+                top_rank: top_rank.unwrap_or_default(),
             },
             ParsedPowerStatus::SetPlayed {
                 old_power,
@@ -198,7 +202,8 @@ impl From<ParsedPowerStatus> for PowerStatus {
                     .unwrap(),
                 old_power,
                 new_power,
-                rank_change: rank_change.map(|x| (x[0], x[1])),
+                rank_change: rank_change.as_ref().map(|x| (x[0], x[1])),
+                top_rank: rank_change.map(|x| x[2]).unwrap_or_default(),
             },
         }
     }

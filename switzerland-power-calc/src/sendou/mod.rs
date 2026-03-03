@@ -52,7 +52,7 @@ use tokio::time;
 use tokio::time::{Interval, MissedTickBehavior, sleep};
 use unic_emoji_char::is_emoji_presentation;
 
-use crate::counts::show_placement_count;
+use crate::counts::{leaderboard_count, show_placement_count};
 use crate::error::ErrorKind;
 pub use crate::migration::migration_cli;
 use crate::sendou::cli_helpers::print_seeding_instructions;
@@ -487,6 +487,7 @@ async fn run_tournament(
     );
 
     let animation_generator = AsyncAnimationGenerator::new().await?;
+    let top_player_count = leaderboard_count(players.len());
     let show_placement_count = show_placement_count(players.len());
 
     let new_players = loop {
@@ -607,6 +608,7 @@ async fn run_tournament(
                             (rank <= show_placement_count).then_some((rank, rank))
                         })
                         .flatten(),
+                    top_player_count,
                     language,
                 )?;
                 continue;
@@ -681,6 +683,7 @@ async fn run_tournament(
                     old_player.rating,
                     player.rating,
                     rank_change,
+                    top_player_count,
                     language,
                 )?;
                 Ok(())
@@ -853,6 +856,7 @@ fn send_progress_message_to_player(
     old_rating: Glicko2Rating,
     new_rating: Glicko2Rating,
     rank_change: Option<(usize, usize)>,
+    top_rank: usize,
     original_language: Language,
 ) -> Result<()> {
     let Some(discord_channel) = discord_channels.get(&team.id).copied() else {
@@ -872,6 +876,7 @@ fn send_progress_message_to_player(
                 calculation_rounds: swiss_round_count,
                 power: new_rating.rating,
                 rank: rank_change.map(|(_, new)| new as u32),
+                top_rank: top_rank as u32,
             }
         }
     } else if other_team.is_some() {
@@ -881,6 +886,7 @@ fn send_progress_message_to_player(
             old_power: old_rating.rating,
             new_power: new_rating.rating,
             rank_change: rank_change.map(|(old, new)| (old as u32, new as u32)),
+            top_rank: top_rank as u32,
         }
     } else {
         return Ok(());

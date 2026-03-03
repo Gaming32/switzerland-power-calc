@@ -93,6 +93,16 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                 alpha: 0,
                 children: vec![
                     Pane {
+                        name: "top_player_marker",
+                        rect: Rect::new(402, 296, 440, 354),
+                        alpha: 0,
+                        contents: PaneContents::image_png(include_bytes!(
+                            "images/top-player-marker.png"
+                        ))?,
+                        ..Pane::EMPTY
+                    }
+                    .build(),
+                    Pane {
                         name: "position_text",
                         rect: Rect::new(0, 180, 600, 105),
                         contents: PaneContents::Text(
@@ -306,6 +316,30 @@ pub const RESULT_RANK_IN: AnimationSet<1> = AnimationSetElement::new(
             AnimationTrack::new(&[
                 Keyframe::new(0.0, 0.0, 0.0),
                 Keyframe::new(0.0, 15.0, 255.0),
+            ]),
+        ),
+    ],
+)
+.to_set();
+
+pub const RESULT_TOP_IN: AnimationSet<1> = AnimationSetElement::new(
+    &["rank_pane", "top_player_marker"],
+    &[
+        (
+            Scale,
+            AnimationTrack::new(&[
+                Keyframe::new(-0.238501951, 0.0, 2.0),
+                Keyframe::new(0.0, 6.0, 0.5689883),
+                Keyframe::new(0.0, 8.0, 1.18522632),
+                Keyframe::new(0.0, 10.0, 0.791526),
+                Keyframe::new(0.0, 12.0, 1.0),
+            ]),
+        ),
+        (
+            Alpha,
+            AnimationTrack::new(&[
+                Keyframe::new(25.5, 0.0, 0.0),
+                Keyframe::new(25.5, 10.0, 255.0),
             ]),
         ),
     ],
