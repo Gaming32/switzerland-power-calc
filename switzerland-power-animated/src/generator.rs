@@ -7,12 +7,12 @@ use crate::texts::AnimationLanguage;
 use crate::{Error, Result};
 use crate::{MatchOutcome, PowerStatus};
 use itertools::izip;
-use sdl2::Sdl;
 use sdl2::image::{InitFlag, Sdl2ImageContext};
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::render::SurfaceCanvas;
 use sdl2::surface::Surface;
 use sdl2::ttf::Sdl2TtfContext;
+use sdl2::Sdl;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::mem;
@@ -341,6 +341,7 @@ impl AnimationGenerator {
         let calc_rank_pane = self.calc_rank_pane.deep_clone();
 
         let rank_pane = calc_rank_pane.immediate_child("rank_pane").unwrap();
+        let top_player_marker = rank_pane.immediate_child("top_player_marker").unwrap();
         let inner_rank_pane = rank_pane.immediate_child("inner_rank_pane").unwrap();
         let rank_arrow_root = inner_rank_pane.immediate_child("rank_arrow_root").unwrap();
         let rank_arrow_root_inner = rank_arrow_root.child(&["inner", "inner_inner"]).unwrap();
@@ -352,6 +353,9 @@ impl AnimationGenerator {
         rank_pane.set_alpha(255);
         inner_rank_pane.set_alpha(255);
 
+        if old_rank <= top_rank {
+            top_player_marker.set_alpha(255);
+        }
         rank_pane
             .immediate_child("position_text")
             .unwrap()
@@ -387,8 +391,8 @@ impl AnimationGenerator {
             new_rank as f64,
             |distance| distance / 120.0,
             move |rank| lang.rank_value(rank.round() as u32),
-            Some((
-                top_rank as f64,
+            (old_rank > top_rank).then_some((
+                top_rank as f64 + 0.5,
                 Box::new(RESULT_TOP_IN.animate(&calc_rank_pane)),
             )),
         );
@@ -462,17 +466,16 @@ impl GeneratorState {
                 }
                 self.display_value += self.change_per_frame;
                 if matches_order(self.display_value, self.new_value, self.order) {
-                    self.value_pane.set_text((self.formatter)(self.new_value));
+                    self.display_value = self.new_value;
                     self.done = true;
-                } else {
-                    self.value_pane
-                        .set_text((self.formatter)(self.display_value));
-                    if let Some((hook_val, hook)) = mem::take(&mut self.hook) {
-                        if matches_order(self.display_value, hook_val, self.order) {
-                            new_animators.push(hook);
-                        } else {
-                            self.hook = Some((hook_val, hook));
-                        }
+                }
+                self.value_pane
+                    .set_text((self.formatter)(self.display_value));
+                if let Some((hook_val, hook)) = mem::take(&mut self.hook) {
+                    if matches_order(self.display_value, hook_val, self.order) {
+                        new_animators.push(hook);
+                    } else {
+                        self.hook = Some((hook_val, hook));
                     }
                 }
                 !self.done
