@@ -11,8 +11,10 @@ pub fn generate_leaderboard_messages(
     player_id_to_discord_id: &HashMap<PlayerId, UserId>,
     max_message_len: usize,
 ) -> Vec<String> {
+    let leaderboard_count = leaderboard_count(new_db.players.len());
+
     let mut messages = Vec::new();
-    let mut message = String::from("# Switzerland Top 50");
+    let mut message = format!("# Switzerland Top {leaderboard_count}");
 
     let get_arrow = |var, default: &str| {
         let mut arrow = env_str(var).unwrap_or_else(|_| default.to_string());
@@ -27,7 +29,7 @@ pub fn generate_leaderboard_messages(
         .players
         .iter()
         .filter(|p| p.show_rank())
-        .take(leaderboard_count(new_db.players.len()))
+        .take(leaderboard_count)
         .enumerate()
     {
         let old_player = old_players.get(&player.id);
