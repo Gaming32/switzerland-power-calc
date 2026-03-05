@@ -1075,6 +1075,13 @@ async fn send_summaries_to_discord(
         }
 
         let _ = writeln!(message, "## Switzerland Power changes");
+        let show_placement_count = show_placement_count(new_db.players.len());
+        let should_show_rank = |player: &SwitzerlandPlayer| {
+            player
+                .rank
+                .is_some_and(|r| r.get() as usize <= show_placement_count)
+                || player.rating.rating >= 1500.0
+        };
         for new_player in &new_db.players {
             let Some(discord_id) = player_id_to_discord_id.get(&new_player.id) else {
                 continue;
@@ -1092,7 +1099,11 @@ async fn send_summaries_to_discord(
                 message,
                 "- {} {}",
                 discord_id.mention(),
-                format_player_rank_summary(old_result, new_player, true)
+                format_player_rank_summary(
+                    old_result,
+                    new_player,
+                    old_result.is_some_and(should_show_rank) || should_show_rank(new_player),
+                )
             );
         }
 
