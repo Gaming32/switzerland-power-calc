@@ -442,7 +442,7 @@ impl GeneratorState {
         new_value: f64,
         change_per_frame: impl FnOnce(f64) -> f64,
         formatter: impl Fn(f64) -> String + 'static,
-        hook: Option<(f64, Box<dyn ActiveAnimator>)>,
+        mut hook: Option<(f64, Box<dyn ActiveAnimator>)>,
     ) {
         struct ValueChangeAnimator<F> {
             value_pane: BuiltPane,
@@ -489,6 +489,14 @@ impl GeneratorState {
 
         let distance = new_value - old_value;
         let distance_sign = distance.signum();
+        if let Some((hook_val, _)) = &hook {
+            let low_val = old_value.min(new_value);
+            let high_val = old_value.max(new_value);
+            if !(low_val..=high_val).contains(&hook_val) {
+                hook = None;
+            }
+        }
+
         self.add_animation(ValueChangeAnimator {
             value_pane: value_pane.clone(),
             new_value,
