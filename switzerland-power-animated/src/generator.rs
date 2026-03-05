@@ -7,12 +7,12 @@ use crate::texts::AnimationLanguage;
 use crate::{Error, Result};
 use crate::{MatchOutcome, PowerStatus};
 use itertools::izip;
+use sdl2::Sdl;
 use sdl2::image::{InitFlag, Sdl2ImageContext};
 use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::render::SurfaceCanvas;
 use sdl2::surface::Surface;
 use sdl2::ttf::Sdl2TtfContext;
-use sdl2::Sdl;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::mem;
@@ -487,10 +487,12 @@ impl GeneratorState {
             found_order.is_eq() || found_order == order
         }
 
+        let distance = new_value - old_value;
+        let distance_sign = distance.signum();
         self.add_animation(ValueChangeAnimator {
             value_pane: value_pane.clone(),
             new_value,
-            change_per_frame: change_per_frame(new_value - old_value),
+            change_per_frame: distance_sign * change_per_frame(distance * distance_sign),
             order: new_value.total_cmp(&old_value),
             display_value: old_value,
             formatter,
