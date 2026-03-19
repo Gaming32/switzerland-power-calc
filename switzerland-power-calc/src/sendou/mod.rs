@@ -11,7 +11,7 @@ use crate::db::{Database, PlayerId, SwitzerlandPlayer, SwitzerlandPlayerMap};
 use crate::sendou::discord::{DiscordEventHandler, DiscordHttp};
 use crate::sendou::lang::{CommandIdDisplay, Language};
 use crate::sendou::schema::{
-    ToMatchResponse, ToResponse, TournamentContext, TournamentData, TournamentMatch,
+    ToMatchResponse, ToResponse, Tournament, TournamentContext, TournamentData, TournamentMatch,
     TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus,
     TournamentRoundMapsMatchType, TournamentStageSettings, TournamentStageSwissSettings,
     TournamentTeam,
@@ -161,13 +161,13 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
         }
         real_get().await
     };
-    let tournament_context = get_tournament().await?.context;
+    let initial_tournament = get_tournament().await?;
 
     let old_players = Database::read(in_db)?.into_map();
     let mut new_players = old_players.clone();
 
-    let teams = initialize_teams(&tournament_context, &mut new_players, &http_client).await?;
-    wait_for_tournament_start(&tournament_context, &get_tournament).await?;
+    let teams = initialize_teams(&initial_tournament, &mut new_players, &http_client).await?;
+    wait_for_tournament_start(&initial_tournament.context, &get_tournament).await?;
 
     let language_command = create_language_command();
     let language_command_id = get_guild()?
@@ -268,12 +268,12 @@ where
 }
 
 async fn initialize_teams<'a>(
-    tournament_context: &'a TournamentContext,
+    tournament: &'a Tournament,
     players: &mut SwitzerlandPlayerMap,
     http_client: &Client,
 ) -> Result<TeamsMap<'a>> {
     let mut teams = HashMap::new();
-    for team in &tournament_context.teams {
+    for team in &tournament.context.teams {
         let player = team.members.first().expect("Sendou team has no members");
         let starting_rating = team.avg_seeding_skill_ordinal.clamp(-10.0, 40.0);
         teams.insert(team.id, team);
@@ -311,33 +311,35 @@ async fn initialize_teams<'a>(
         },
     );
 
-    let mut seeded_team_ids = vec![];
-    let (above_1500, below_1500) = sorted_players.split_at(
-        sorted_players
-            .iter()
-            .position(|(_, p)| p.rating.rating < 1500.0)
-            .unwrap_or(sorted_players.len()),
-    );
-    seeded_team_ids.extend(above_1500.iter().map(|(t, _)| t.id));
-    for team in &tournament_context.teams {
-        let player = &players[&PlayerId::Sendou(team.members.first().unwrap().user_id)];
-        if player.rating.rating == 1500.0 {
-            seeded_team_ids.push(team.id);
+    if tournament.data.stages.is_empty() {
+        let mut seeded_team_ids = vec![];
+        let (above_1500, below_1500) = sorted_players.split_at(
+            sorted_players
+                .iter()
+                .position(|(_, p)| p.rating.rating < 1500.0)
+                .unwrap_or(sorted_players.len()),
+        );
+        seeded_team_ids.extend(above_1500.iter().map(|(t, _)| t.id));
+        for team in &tournament.context.teams {
+            let player = &players[&PlayerId::Sendou(team.members.first().unwrap().user_id)];
+            if player.rating.rating == 1500.0 {
+                seeded_team_ids.push(team.id);
+            }
         }
+        seeded_team_ids.extend(below_1500.iter().map(|(t, _)| t.id));
+        http_client
+            .post(format!(
+                "https://sendou.ink/api/tournament/{}/seeds",
+                tournament.context.id
+            ))
+            .bearer_auth(env_str("SENDOU_WRITE_TOKEN")?)
+            .json(&json!({
+                "tournamentTeamIds": seeded_team_ids,
+            }))
+            .send()
+            .await?
+            .error_for_status()?;
     }
-    seeded_team_ids.extend(below_1500.iter().map(|(t, _)| t.id));
-    http_client
-        .post(format!(
-            "https://sendou.ink/api/tournament/{}/seeds",
-            tournament_context.id
-        ))
-        .bearer_auth(env_str("SENDOU_WRITE_TOKEN")?)
-        .json(&json!({
-            "tournamentTeamIds": seeded_team_ids,
-        }))
-        .send()
-        .await?
-        .error_for_status()?;
 
     Ok(teams)
 }
