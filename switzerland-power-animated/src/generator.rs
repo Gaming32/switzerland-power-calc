@@ -492,7 +492,7 @@ impl GeneratorState {
         if let Some((hook_val, _)) = &hook {
             let low_val = old_value.min(new_value);
             let high_val = old_value.max(new_value);
-            if !(low_val..=high_val).contains(&hook_val) {
+            if !(low_val..=high_val).contains(hook_val) {
                 hook = None;
             }
         }
