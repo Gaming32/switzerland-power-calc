@@ -7,7 +7,8 @@ pub fn print_seeding_instructions<'a, Team, Iter, Format>(
     players: &SwitzerlandPlayerMap,
     teams_iter: Iter,
     formatter: Format,
-) where
+) -> Vec<(&'a Team, &SwitzerlandPlayer)>
+where
     Team: 'a,
     Iter: IntoIterator<Item = (&'a Team, PlayerId)>,
     Format: Fn(&Team, &SwitzerlandPlayer) -> String,
@@ -19,11 +20,11 @@ pub fn print_seeding_instructions<'a, Team, Iter, Format>(
         .sorted_by(|(_, p1), (_, p2)| p1.descending_rating_order_cmp(p2))
         .collect_vec();
     if sorted_teams.is_empty() {
-        return;
+        return sorted_teams;
     }
     println!(
         "{}",
-        Color::Green.paint("Follow the following seeding instructions:")
+        Color::Green.paint("The following seeding instructions are being applied:")
     );
     let print_ranks = |comparison: Ordering, message| {
         let mut ranks = sorted_teams
@@ -39,6 +40,7 @@ pub fn print_seeding_instructions<'a, Team, Iter, Format>(
             println!();
         }
     };
-    print_ranks(Ordering::Greater, "Move these players to the top:");
-    print_ranks(Ordering::Less, "Move these players to the bottom:");
+    print_ranks(Ordering::Greater, "These players will be moved to the top:");
+    print_ranks(Ordering::Less, "These players will be moved to the bottom:");
+    sorted_teams
 }

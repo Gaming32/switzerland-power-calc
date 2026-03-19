@@ -23,8 +23,9 @@ use crate::{
 use chrono::Utc;
 use dashmap::DashMap;
 use itertools::Itertools;
-use reqwest::Client as ReqwestClient;
+use reqwest::{Client as ReqwestClient, Client};
 use rustyline_async::{Readline, ReadlineError, ReadlineEvent, SharedWriter};
+use serde_json::json;
 use serenity::FutureExt;
 use serenity::all::{
     ActivityData, CacheHttp, Channel, ChannelId, ChannelType, CommandId, CommandOptionType,
@@ -165,7 +166,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
     let old_players = Database::read(in_db)?.into_map();
     let mut new_players = old_players.clone();
 
-    let teams = initialize_teams(&tournament_context, &mut new_players);
+    let teams = initialize_teams(&tournament_context, &mut new_players, &http_client).await?;
     wait_for_tournament_start(&tournament_context, &get_tournament).await?;
 
     let language_command = create_language_command();
@@ -266,10 +267,11 @@ where
         .map_err(|e| ErrorKind::InvalidEnv(var.to_string(), Box::new(e)).into())
 }
 
-fn initialize_teams<'a>(
+async fn initialize_teams<'a>(
     tournament_context: &'a TournamentContext,
     players: &mut SwitzerlandPlayerMap,
-) -> TeamsMap<'a> {
+    http_client: &Client,
+) -> Result<TeamsMap<'a>> {
     let mut teams = HashMap::new();
     for team in &tournament_context.teams {
         let player = team.members.first().expect("Sendou team has no members");
@@ -290,7 +292,7 @@ fn initialize_teams<'a>(
             .display_name = Some(player.username.clone());
     }
 
-    print_seeding_instructions(
+    let sorted_players = print_seeding_instructions(
         players,
         teams.values().map(|team| {
             (
@@ -309,7 +311,35 @@ fn initialize_teams<'a>(
         },
     );
 
-    teams
+    let mut seeded_team_ids = vec![];
+    let (above_1500, below_1500) = sorted_players.split_at(
+        sorted_players
+            .iter()
+            .position(|(_, p)| p.rating.rating < 1500.0)
+            .unwrap_or(sorted_players.len()),
+    );
+    seeded_team_ids.extend(above_1500.iter().map(|(t, _)| t.id));
+    for team in &tournament_context.teams {
+        let player = &players[&PlayerId::Sendou(team.members.first().unwrap().user_id)];
+        if player.rating.rating == 1500.0 {
+            seeded_team_ids.push(team.id);
+        }
+    }
+    seeded_team_ids.extend(below_1500.iter().map(|(t, _)| t.id));
+    http_client
+        .post(format!(
+            "https://sendou.ink/api/tournament/{}/seeds",
+            tournament_context.id
+        ))
+        .bearer_auth(env_str("SENDOU_WRITE_TOKEN")?)
+        .json(&json!({
+            "tournamentTeamIds": seeded_team_ids,
+        }))
+        .send()
+        .await?
+        .error_for_status()?;
+
+    Ok(teams)
 }
 
 async fn wait_for_tournament_start(
