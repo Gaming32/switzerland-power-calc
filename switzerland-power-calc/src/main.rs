@@ -12,6 +12,7 @@ use clap::Parser;
 use error::{Error, Result};
 use hashlink::LinkedHashMap;
 use itertools::Itertools;
+use skillratings::glicko2::Glicko2Rating;
 use std::backtrace::BacktraceStatus;
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -254,7 +255,7 @@ fn run(args: Args) -> Result<()> {
             println!("Found {} players:", results.len());
             for player in results {
                 if !verbose {
-                    print_player_simply(None, &player, true);
+                    print_player_simply(None, &player, true, true);
                 } else {
                     println!(
                         "  #{} {}: {:?}",
@@ -375,7 +376,7 @@ pub fn summarize_differences(
         {
             continue;
         }
-        print_player_simply(old_result, new_player, true);
+        print_player_simply(old_result, new_player, true, true);
     }
 }
 
@@ -383,10 +384,11 @@ pub fn print_player_simply(
     old_player: Option<&SwitzerlandPlayer>,
     new_player: &SwitzerlandPlayer,
     show_rank: bool,
+    show_rd: bool,
 ) {
     println!(
         "{}",
-        format_player_simply(old_player, new_player, show_rank)
+        format_player_simply(old_player, new_player, show_rank, show_rd)
     );
 }
 
@@ -394,11 +396,12 @@ pub fn format_player_simply(
     old_player: Option<&SwitzerlandPlayer>,
     new_player: &SwitzerlandPlayer,
     show_rank: bool,
+    show_rd: bool,
 ) -> String {
     format!(
         "- {}: {}",
         new_player.display_name(),
-        format_player_rank_summary(old_player, new_player, show_rank)
+        format_player_rank_summary(old_player, new_player, show_rank, show_rd)
     )
 }
 
@@ -406,12 +409,13 @@ pub fn format_player_rank_summary(
     old_player: Option<&SwitzerlandPlayer>,
     new_player: &SwitzerlandPlayer,
     show_rank: bool,
+    show_rd: bool,
 ) -> String {
     if let Some(old_player) = old_player {
         format!(
-            "{:.1} SP → {:.1} SP ({:+.1}){}",
-            old_player.rating.rating,
-            new_player.rating.rating,
+            "{} → {} ({:+.1}){}",
+            format_sp(old_player.rating, show_rd),
+            format_sp(new_player.rating, show_rd),
             new_player.rating.rating - old_player.rating.rating,
             if show_rank {
                 match (old_player.rank, new_player.rank) {
@@ -442,6 +446,14 @@ pub fn format_player_rank_summary(
                 "".to_string()
             }
         )
+    }
+}
+
+fn format_sp(rating: Glicko2Rating, show_rd: bool) -> String {
+    if show_rd {
+        format!("{:.1} SP (RD {})", rating.rating, rating.deviation as i64)
+    } else {
+        format!("{:.1} SP", rating.rating)
     }
 }
 

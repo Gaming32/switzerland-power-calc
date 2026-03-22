@@ -695,7 +695,7 @@ async fn run_tournament(
                 writeln!(
                     command_engine.printer,
                     "  {}",
-                    format_player_simply(Some(&old_player), player, false)
+                    format_player_simply(Some(&old_player), player, false, true)
                 )?;
                 send_progress_message_to_player(
                     http_client,
@@ -1135,6 +1135,7 @@ async fn send_summaries_to_discord(
                     old_result,
                     new_player,
                     old_result.is_some_and(should_show_rank) || should_show_rank(new_player),
+                    false,
                 )
             );
         }
