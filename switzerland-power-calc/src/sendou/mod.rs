@@ -18,7 +18,8 @@ use crate::sendou::schema::{
 };
 use crate::sendou::types::{DiscordChannelsMap, GetTournamentFn, TeamsMap};
 use crate::{
-    Error, Result, format_player_rank_summary, format_player_simply, summarize_differences,
+    Error, Result, format_player_rank_summary, format_player_simply, format_sp,
+    summarize_differences,
 };
 use chrono::Utc;
 use dashmap::DashMap;
@@ -302,10 +303,10 @@ async fn initialize_teams<'a>(
         }),
         |team, player| {
             format!(
-                "{} ({}) [{:.1} SP{}]",
+                "{} ({}) [{}{}]",
                 team.name,
                 team.members.first().unwrap().username,
-                player.rating.rating,
+                format_sp(player.rating, true),
                 if player.unrated { " (NEW)" } else { "" }
             )
         },

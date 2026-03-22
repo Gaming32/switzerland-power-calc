@@ -438,8 +438,8 @@ pub fn format_player_rank_summary(
         )
     } else {
         format!(
-            "{:.1} SP{}",
-            new_player.rating.rating,
+            "{}{}",
+            format_sp(new_player.rating, show_rd),
             if show_rank && let Some(rank) = new_player.rank {
                 format!("; #{}", rank)
             } else {
@@ -449,12 +449,19 @@ pub fn format_player_rank_summary(
     }
 }
 
-fn format_sp(rating: Glicko2Rating, show_rd: bool) -> String {
-    if show_rd {
-        format!("{:.1} SP (RD {})", rating.rating, rating.deviation as i64)
-    } else {
-        format!("{:.1} SP", rating.rating)
-    }
+pub fn format_sp(rating: Glicko2Rating, show_rd: bool) -> String {
+    let scaled_power = (rating.rating * 10.0).floor().abs() as u32;
+    format!(
+        "{}{}.{} SP{}",
+        if rating.rating < 0.0 { "-" } else { "" },
+        scaled_power / 10,
+        scaled_power % 10,
+        if show_rd {
+            format!(" (RD {})", rating.deviation as i64)
+        } else {
+            "".to_string()
+        },
+    )
 }
 
 fn hide_unhide_rank(

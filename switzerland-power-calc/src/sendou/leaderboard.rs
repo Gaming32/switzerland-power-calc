@@ -1,5 +1,6 @@
 use crate::counts::leaderboard_count;
 use crate::db::{Database, PlayerId, SwitzerlandPlayerMap};
+use crate::format_sp;
 use crate::sendou::{env_str, format_link};
 use serenity::all::{Mentionable, UserId};
 use std::cmp::Ordering;
@@ -34,7 +35,7 @@ pub fn generate_leaderboard_messages(
     {
         let old_player = old_players.get(&player.id);
         let line = format!(
-            "{}. {}{}{} with {:.1} SP",
+            "{}. {}{}{} with {}",
             index + 1,
             match old_player
                 .filter(|x| player.rating != x.rating) // Don't show an arrow if they didn't play
@@ -58,7 +59,7 @@ pub fn generate_leaderboard_messages(
                 .get(&player.id)
                 .map(|x| format!(" ({})", x.mention()))
                 .unwrap_or_default(),
-            player.rating.rating,
+            format_sp(player.rating, false),
         );
         if message.len() + line.len() >= max_message_len {
             messages.push(message.clone());
