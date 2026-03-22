@@ -104,18 +104,18 @@ impl AnimationGenerator {
         lang: AnimationLanguage,
     ) -> Result<FramesVec> {
         match status {
-            PowerStatus::Calculating { progress, total } => {
-                self.generate_calculating(lang, progress, total, None, None, 0)?
+            PowerStatus::Calculating { old_calc_percent, new_calc_percent } => {
+                self.generate_calculating(lang, old_calc_percent, new_calc_percent, None, None, 0)?
             }
             PowerStatus::Calculated {
-                calculation_rounds,
+                prev_calc_percent,
                 power,
                 rank,
                 top_rank,
             } => self.generate_calculating(
                 lang,
-                calculation_rounds,
-                calculation_rounds,
+                prev_calc_percent,
+                1.0,
                 Some(power),
                 rank,
                 top_rank,
@@ -144,8 +144,8 @@ impl AnimationGenerator {
     fn generate_calculating(
         &self,
         lang: AnimationLanguage,
-        progress: u32,
-        total: u32,
+        old_calc_percent: f64,
+        new_calc_percent: f64,
         calculated_power: Option<f64>,
         estimated_rank: Option<u32>,
         top_rank: u32,
@@ -156,7 +156,7 @@ impl AnimationGenerator {
         let calc_rank_pane = self.calc_rank_pane.deep_clone();
 
         let progress_pane = calc_rank_pane.immediate_child("progress_pane").unwrap();
-        let progress_text = progress_pane.immediate_child("progress_text").unwrap();
+        let calc_percentage = progress_pane.immediate_child("calc_percentage").unwrap();
 
         let result_pane = calc_rank_pane.immediate_child("result_pane").unwrap();
         let power_value_text = result_pane.immediate_child("power_value_text").unwrap();
@@ -164,22 +164,22 @@ impl AnimationGenerator {
         let rank_pane = calc_rank_pane.immediate_child("rank_pane").unwrap();
         let inner_rank_pane = rank_pane.immediate_child("inner_rank_pane").unwrap();
 
+        fn normalize_calc_percent(percent: f64) -> f64 {
+            percent.clamp(0.0, 1.0) * 100.0
+        }
+
         progress_pane
             .immediate_child("calculating_text")
             .unwrap()
             .set_text(lang.calculating());
-        progress_text.set_text((progress - 1).to_string());
-        progress_pane
-            .immediate_child("total_text")
-            .unwrap()
-            .set_text(format!("/{total}"));
+        calc_percentage.set_text(lang.calc_percentage(normalize_calc_percent(old_calc_percent)));
 
         state.animate(&calc_rank_pane, WINDOW_IN, 60)?;
 
-        progress_text.set_alpha(0);
+        calc_percentage.set_alpha(0);
         state.render_frame(&calc_rank_pane, 1)?;
 
-        progress_text.set_text(progress.to_string());
+        calc_percentage.set_text(lang.calc_percentage(normalize_calc_percent(new_calc_percent)));
         state.animate(&calc_rank_pane, PROGRESS_IN, 120)?;
 
         if let Some(calculated_power) = calculated_power {

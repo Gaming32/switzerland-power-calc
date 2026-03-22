@@ -66,6 +66,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             },
         );
         add_translation(
+            "calc_percentage",
+            TranslationType::DecimalNumber(false),
+            &get_translation("CommonMsg/Sdodr/Sdodr_Units", "Percent_Unit_Dec")
+                .replace("[group=0002 type=0000 params=00 04 00 00]", "{integer}")
+                .replace("[group=0002 type=0000 params=01 04 00 00]", "{fraction}"),
+        );
+        add_translation(
             "calculated",
             TranslationType::Normal,
             match lang_name.as_str() {
@@ -75,7 +82,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
         add_translation(
             "power_value",
-            TranslationType::Power(true),
+            TranslationType::DecimalNumber(true),
             &get_translation("CommonMsg/UnitName", "XPower")
                 .replace("[group=0002 type=0000 params=00 04 00 00]", "{integer}")
                 .replace("[group=0002 type=0000 params=01 01 00 00]", "{fraction}"),
@@ -117,14 +124,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         );
         add_translation(
             "power_up",
-            TranslationType::Power(false),
+            TranslationType::DecimalNumber(false),
             &get_translation("LayoutMsg/Lobby_ResultClearance_00", "210")
                 .replace("[group=0002 type=0000 params=00 02 00 00]", "{integer}")
                 .replace("[group=0002 type=0000 params=01 01 00 00]", "{fraction}"),
         );
         add_translation(
             "power_down",
-            TranslationType::Power(false),
+            TranslationType::DecimalNumber(false),
             &get_translation("LayoutMsg/Lobby_ResultClearance_00", "211")
                 .replace("[group=0002 type=0000 params=00 02 00 00]", "{integer}")
                 .replace("[group=0002 type=0000 params=01 01 00 00]", "{fraction}"),
@@ -163,7 +170,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 enum TranslationType {
     Normal,
     FullWidthNumbers,
-    Power(bool),
+    DecimalNumber(bool),
 }
 
 impl TranslationType {
@@ -187,7 +194,7 @@ impl TranslationType {
                     .map(|x| format!(", {x}: {arg_type}"))
                     .collect::<String>()
             }
-            Self::Power(_) => ", power: f64".to_string(),
+            Self::DecimalNumber(_) => ", value: f64".to_string(),
         };
         let formatter = if args_text.is_empty() {
             writeln!(output, "  pub const fn {key}(&self) -> &'static str {{")?;
@@ -203,11 +210,11 @@ impl TranslationType {
                     writeln!(output, "    let {arg} = full_width_number({arg});")?;
                 }
             }
-            TranslationType::Power(include_negative_sign) => {
+            TranslationType::DecimalNumber(include_negative_sign) => {
                 assert_eq!(arg_names, vec!["integer", "fraction"]);
                 writeln!(
                     output,
-                    "    let (integer, fraction) = format_power_num(power, {include_negative_sign});"
+                    "    let (integer, fraction) = format_power_num(value, {include_negative_sign});"
                 )?;
             }
         }

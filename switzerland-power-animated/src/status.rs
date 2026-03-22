@@ -1,11 +1,11 @@
 #[derive(Copy, Clone, Debug)]
 pub enum PowerStatus {
     Calculating {
-        progress: u32,
-        total: u32,
+        old_calc_percent: f64,
+        new_calc_percent: f64,
     },
     Calculated {
-        calculation_rounds: u32,
+        prev_calc_percent: f64,
         power: f64,
         rank: Option<u32>,
         top_rank: u32,

@@ -35,22 +35,10 @@ pub fn calc_rank_pane(bold_font: Rc<FontSet<'static>>) -> Result<BuiltPane> {
                     }
                     .build(),
                     Pane {
-                        name: "progress_text",
-                        rect: Rect::new(-54, -108, 200, 206),
+                        name: "calc_percentage",
+                        rect: Rect::new(5, -106, 800, 294),
                         contents: PaneContents::Text(
-                            TextPaneContents::new("3", &bold_font).scale(1.2, 1.19),
-                        ),
-                        ..Pane::EMPTY
-                    }
-                    .build(),
-                    Pane {
-                        name: "total_text",
-                        rect: Rect::new(2, -126, 200, 150),
-                        anchor: Alignment::LEFT,
-                        contents: PaneContents::Text(
-                            TextPaneContents::new("5", &bold_font)
-                                .scale(0.8, 0.8)
-                                .alignment(Alignment::LEFT),
+                            TextPaneContents::new("50.0%", &bold_font).scale(1.2, 1.19),
                         ),
                         ..Pane::EMPTY
                     }
@@ -239,7 +227,7 @@ pub const WINDOW_IN: AnimationSet<1> = AnimationSetElement::new(
 .to_set();
 
 pub const PROGRESS_IN: AnimationSet<1> = AnimationSetElement::new(
-    &["progress_pane", "progress_text"],
+    &["progress_pane", "calc_percentage"],
     &[
         (
             Scale,

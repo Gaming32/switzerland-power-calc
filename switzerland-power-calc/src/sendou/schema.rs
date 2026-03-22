@@ -58,13 +58,7 @@ pub enum TournamentStageSettings {
     SingleElimination {},
     DoubleElimination {},
     RoundRobin {},
-    Swiss { swiss: TournamentStageSwissSettings },
-}
-
-#[derive(Copy, Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TournamentStageSwissSettings {
-    pub round_count: u32,
+    Swiss {},
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
@@ -79,7 +73,6 @@ pub struct TournamentRound {
     pub group_id: SendouId,
     pub id: SendouId,
     pub number: u32,
-    pub stage_id: SendouId,
     pub maps: TournamentRoundMaps,
 }
 

@@ -134,19 +134,19 @@ enum ParsedPowerStatus {
     /// Generate a progress calculating animation
     #[clap(disable_help_flag = true)]
     Calculating {
-        /// The new progress through the calculations
-        #[arg(value_parser = clap::value_parser!(u8).range(1..))]
-        progress: u8,
-        /// The total length of the calculations
-        #[arg(value_parser = clap::value_parser!(u8).range(3..))]
-        total: u8,
+        /// The previous percentage (0-100) of calculation progress
+        #[arg(value_parser = clap::value_parser!(f64))]
+        old_calc_percent: f64,
+        /// The new percentage (0-100) of calculation progress
+        #[arg(value_parser = clap::value_parser!(f64))]
+        new_calc_percent: f64,
     },
     /// Generate a calculation complete animation
     #[clap(disable_help_flag = true)]
     Calculated {
-        /// The total length of the calculations
-        #[arg(value_parser = clap::value_parser!(u8).range(3..))]
-        round_count: u8,
+        /// The percentage (0-100) of calculation progress immediately before finishing calcs
+        #[arg(value_parser = clap::value_parser!(f64))]
+        prev_calc_percent: f64,
         /// The calculated Switzerland Power
         power: f64,
         /// The estimated player rank
@@ -174,17 +174,20 @@ enum ParsedPowerStatus {
 impl From<ParsedPowerStatus> for PowerStatus {
     fn from(val: ParsedPowerStatus) -> Self {
         match val {
-            ParsedPowerStatus::Calculating { progress, total } => PowerStatus::Calculating {
-                progress: progress as u32,
-                total: total as u32,
+            ParsedPowerStatus::Calculating {
+                old_calc_percent,
+                new_calc_percent,
+            } => PowerStatus::Calculating {
+                old_calc_percent: old_calc_percent / 100.0,
+                new_calc_percent: new_calc_percent / 100.0,
             },
             ParsedPowerStatus::Calculated {
-                round_count,
+                prev_calc_percent,
                 power,
                 rank,
                 top_rank,
             } => PowerStatus::Calculated {
-                calculation_rounds: round_count as u32,
+                prev_calc_percent: prev_calc_percent / 100.0,
                 power,
                 rank,
                 top_rank: top_rank.unwrap_or_default(),
@@ -365,6 +368,8 @@ fn run(args: Args) -> Result<()> {
     Ok(())
 }
 
+pub const MAXIMUM_CALCED_RD: f64 = 185.0;
+
 pub fn summarize_differences(
     old_results: &SwitzerlandPlayerMap,
     new_results: &Vec<SwitzerlandPlayer>,
@@ -411,7 +416,7 @@ pub fn format_player_rank_summary(
     show_rank: bool,
     show_rd: bool,
 ) -> String {
-    if let Some(old_player) = old_player {
+    if let Some(old_player) = old_player.filter(|p| p.rating.deviation <= MAXIMUM_CALCED_RD) {
         format!(
             "{} → {} ({:+.1}){}",
             format_sp(old_player.rating, show_rd),

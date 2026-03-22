@@ -301,9 +301,6 @@ language_messages! {
     changed_language(language: Language) => {
         Language::EnglishUnitedStates => "Bot language changed to {language}",
     },
-    round_bye => {
-        Language::EnglishUnitedStates => "BYE",
-    },
     round_played(win_lose: &str, against: &str) => {
         Language::EnglishUnitedStates => "{win_lose} vs {against}",
     },

@@ -13,12 +13,11 @@ use crate::sendou::lang::{CommandIdDisplay, Language};
 use crate::sendou::schema::{
     ToMatchResponse, ToResponse, Tournament, TournamentContext, TournamentData, TournamentMatch,
     TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus,
-    TournamentRoundMapsMatchType, TournamentStageSettings, TournamentStageSwissSettings,
-    TournamentTeam,
+    TournamentRoundMapsMatchType, TournamentStageSettings, TournamentTeam,
 };
 use crate::sendou::types::{DiscordChannelsMap, GetTournamentFn, TeamsMap};
 use crate::{
-    Error, Result, format_player_rank_summary, format_player_simply, format_sp,
+    Error, MAXIMUM_CALCED_RD, Result, format_player_rank_summary, format_player_simply, format_sp,
     summarize_differences,
 };
 use chrono::Utc;
@@ -197,7 +196,6 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
     run_tournament(
         &http_client,
         &discord_http,
-        &old_players,
         &mut new_players,
         &teams,
         &discord_user_languages,
@@ -501,7 +499,6 @@ async fn create_discord_channels(
 async fn run_tournament(
     http_client: &ReqwestClient,
     http: &DiscordHttp,
-    original_players: &SwitzerlandPlayerMap,
     players: &mut SwitzerlandPlayerMap,
     teams: &TeamsMap<'_>,
     discord_user_languages: &DashMap<UserId, Language>,
@@ -525,33 +522,6 @@ async fn run_tournament(
 
     let new_players = loop {
         let tournament = get_tournament().await?;
-        let (swiss_round_ids, swiss_round_count) = {
-            if let Some((swiss_stage, round_count)) = tournament.data.stages.iter().find_map(|x| {
-                if let TournamentStageSettings::Swiss {
-                    swiss: TournamentStageSwissSettings { round_count },
-                } = x.settings
-                {
-                    Some((x.id, round_count))
-                } else {
-                    None
-                }
-            }) {
-                (
-                    tournament
-                        .data
-                        .rounds
-                        .iter()
-                        .filter(|x| x.stage_id == swiss_stage)
-                        .sorted_by_key(|x| x.number)
-                        .map(|x| (x.id, x.number))
-                        .collect_vec(),
-                    round_count,
-                )
-            } else {
-                command_engine.pump().await?;
-                continue;
-            }
-        };
         let rounds: HashMap<_, _> = tournament
             .data
             .rounds
@@ -590,9 +560,6 @@ async fn run_tournament(
                 }
             }
 
-            let calc_round = swiss_round_ids
-                .iter()
-                .find_map(|(id, number)| (*id == tourney_match.round_id).then_some(*number));
             let get_player = |opponent: &Option<TournamentMatchOpponent>| {
                 teams
                     .get(&opponent.unwrap().id.expect("Null opponent in ready match"))
@@ -612,39 +579,7 @@ async fn run_tournament(
             if tourney_match.status == TournamentMatchStatus::Ready
                 && (tourney_match.opponent1.is_none() || tourney_match.opponent2.is_none())
             {
-                // BYE
-                if !completed_matches.insert(tourney_match.id) {
-                    continue;
-                }
-                let opponent = tourney_match.opponent1.or(tourney_match.opponent2);
-                let (team, player, rating, show_rank, language) = get_player(&opponent);
-                send_progress_message_to_player(
-                    http_client,
-                    http,
-                    original_players,
-                    discord_channels,
-                    discord_user_languages,
-                    &tournament.context,
-                    &tourney_match,
-                    &animation_generator,
-                    team,
-                    None,
-                    calc_round,
-                    swiss_round_count,
-                    &player,
-                    opponent.unwrap(),
-                    rating,
-                    rating,
-                    show_rank
-                        .then(|| {
-                            let rank = ranked_players.get_rank(rating) + 1;
-                            (rank <= show_placement_count).then_some((rank, rank))
-                        })
-                        .flatten(),
-                    top_player_count,
-                    language,
-                )?;
-                continue;
+                continue; // BYE
             }
             if tourney_match.status != TournamentMatchStatus::Completed {
                 completed_matches.remove(&tourney_match.id);
@@ -701,20 +636,17 @@ async fn run_tournament(
                 send_progress_message_to_player(
                     http_client,
                     http,
-                    original_players,
                     discord_channels,
                     discord_user_languages,
                     &tournament.context,
                     &tourney_match,
                     &animation_generator,
                     team,
-                    Some(other_team),
-                    calc_round,
-                    swiss_round_count,
-                    &player.id,
+                    other_team,
                     opponent.unwrap(),
                     old_player.rating,
                     player.rating,
+                    !old_player.unrated,
                     rank_change,
                     top_player_count,
                     language,
@@ -874,20 +806,17 @@ impl CommandEngine {
 fn send_progress_message_to_player(
     http_client: &ReqwestClient,
     discord_http: &DiscordHttp,
-    original_players: &SwitzerlandPlayerMap,
     discord_channels: &DiscordChannelsMap,
     discord_user_languages: &DashMap<UserId, Language>,
     tournament_context: &TournamentContext,
     tourney_match: &TournamentMatch,
     animation_generator: &AsyncAnimationGenerator,
     team: &TournamentTeam,
-    other_team: Option<&TournamentTeam>,
-    calc_round: Option<u32>,
-    swiss_round_count: u32,
-    player_id: &PlayerId,
+    other_team: &TournamentTeam,
     my_result: TournamentMatchOpponent,
     old_rating: Glicko2Rating,
     new_rating: Glicko2Rating,
+    was_rated: bool,
     rank_change: Option<(usize, usize)>,
     top_rank: usize,
     original_language: Language,
@@ -896,24 +825,18 @@ fn send_progress_message_to_player(
         return Ok(());
     };
 
-    let mut power_status = if let Some(calc_round) = calc_round
-        && !original_players.contains_key(player_id)
-    {
-        if calc_round < swiss_round_count {
-            PowerStatus::Calculating {
-                progress: calc_round,
-                total: swiss_round_count,
-            }
-        } else {
-            PowerStatus::Calculated {
-                calculation_rounds: swiss_round_count,
-                power: new_rating.rating,
-                rank: rank_change.map(|(_, new)| new as u32),
-                top_rank: top_rank as u32,
-            }
-        }
-    } else if other_team.is_some() {
-        // Don't show BYEs (after calcs)
+    fn calc_percentage(deviation: f64) -> f64 {
+        const DEFAULT_RD: f64 = 350.0;
+        1.0 - (deviation - MAXIMUM_CALCED_RD) / (DEFAULT_RD - MAXIMUM_CALCED_RD)
+    }
+
+    let old_calc_percent = if was_rated {
+        calc_percentage(old_rating.deviation)
+    } else {
+        0.0
+    };
+    let new_calc_percent = calc_percentage(new_rating.deviation);
+    let mut power_status = if old_calc_percent >= 1.0 {
         PowerStatus::SetPlayed {
             matches: Default::default(),
             old_power: old_rating.rating,
@@ -921,8 +844,18 @@ fn send_progress_message_to_player(
             rank_change: rank_change.map(|(old, new)| (old as u32, new as u32)),
             top_rank: top_rank as u32,
         }
+    } else if new_calc_percent >= 1.0 {
+        PowerStatus::Calculated {
+            prev_calc_percent: old_calc_percent,
+            power: new_rating.rating,
+            rank: rank_change.map(|(_, new)| new as u32),
+            top_rank: top_rank as u32,
+        }
     } else {
-        return Ok(());
+        PowerStatus::Calculating {
+            old_calc_percent,
+            new_calc_percent,
+        }
     };
 
     let player_discord_id = team.members.first().unwrap().discord_id;
@@ -932,23 +865,18 @@ fn send_progress_message_to_player(
         .copied()
         .unwrap_or(original_language);
 
-    let message = other_team.map_or_else(
-        || language.round_bye().to_string(),
-        |team| {
-            format_link(
-                &language.round_played(
-                    match my_result.result.unwrap() {
-                        TournamentMatchResult::Win => language.to_animation_language().win(),
-                        TournamentMatchResult::Loss => language.to_animation_language().lose(),
-                    },
-                    &team.members.first().unwrap().username,
-                ),
-                &format!(
-                    "<https://sendou.ink/to/{}/matches/{}>",
-                    tournament_context.id, tourney_match.id
-                ),
-            )
-        },
+    let message = format_link(
+        &language.round_played(
+            match my_result.result.unwrap() {
+                TournamentMatchResult::Win => language.to_animation_language().win(),
+                TournamentMatchResult::Loss => language.to_animation_language().lose(),
+            },
+            &other_team.members.first().unwrap().username,
+        ),
+        &format!(
+            "<https://sendou.ink/to/{}/matches/{}>",
+            tournament_context.id, tourney_match.id,
+        ),
     );
 
     let http_client = http_client.clone();
