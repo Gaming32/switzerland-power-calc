@@ -368,7 +368,7 @@ fn run(args: Args) -> Result<()> {
     Ok(())
 }
 
-pub const MAXIMUM_CALCED_RD: f64 = 185.0;
+pub const MAXIMUM_CALCED_RD: f64 = 200.0;
 
 pub fn summarize_differences(
     old_results: &SwitzerlandPlayerMap,
