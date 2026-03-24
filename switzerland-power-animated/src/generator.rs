@@ -104,7 +104,10 @@ impl AnimationGenerator {
         lang: AnimationLanguage,
     ) -> Result<FramesVec> {
         match status {
-            PowerStatus::Calculating { old_calc_percent, new_calc_percent } => {
+            PowerStatus::Calculating {
+                old_calc_percent,
+                new_calc_percent,
+            } => {
                 self.generate_calculating(lang, old_calc_percent, new_calc_percent, None, None, 0)?
             }
             PowerStatus::Calculated {
