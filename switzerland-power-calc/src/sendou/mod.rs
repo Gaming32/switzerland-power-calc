@@ -1044,6 +1044,9 @@ async fn send_summaries_to_discord(
                 || player.rating.rating >= 1500.0
         };
         for new_player in &new_db.players {
+            if new_player.rating.deviation > MAXIMUM_CALCED_RD {
+                continue;
+            }
             let Some(discord_id) = player_id_to_discord_id.get(&new_player.id) else {
                 continue;
             };

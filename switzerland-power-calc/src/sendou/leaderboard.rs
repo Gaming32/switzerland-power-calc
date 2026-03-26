@@ -1,7 +1,7 @@
 use crate::counts::leaderboard_count;
 use crate::db::{Database, PlayerId, SwitzerlandPlayerMap};
-use crate::format_sp;
 use crate::sendou::{env_str, format_link};
+use crate::{MAXIMUM_CALCED_RD, format_sp};
 use serenity::all::{Mentionable, UserId};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -29,7 +29,7 @@ pub fn generate_leaderboard_messages(
     for (index, player) in new_db
         .players
         .iter()
-        .filter(|p| p.show_rank())
+        .filter(|p| p.show_rank() && p.rating.deviation <= MAXIMUM_CALCED_RD)
         .take(leaderboard_count)
         .enumerate()
     {
