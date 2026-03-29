@@ -427,6 +427,7 @@ async fn create_discord_channels(
     let mut channels = HashMap::new();
 
     let me_user = discord_http.cache().current_user();
+    let commentators_role = env("DISCORD_COMMENTATORS_ROLE_ID")?;
 
     for team in get_tournament().await?.context.teams {
         if team.check_ins.is_empty() {
@@ -467,6 +468,11 @@ async fn create_discord_channels(
                                 allow: USER_CHANNEL_PERMS,
                                 deny: Permissions::empty(),
                                 kind: PermissionOverwriteType::Member(user.id),
+                            },
+                            PermissionOverwrite {
+                                allow: Permissions::VIEW_CHANNEL,
+                                deny: Permissions::SEND_MESSAGES,
+                                kind: PermissionOverwriteType::Role(commentators_role),
                             },
                             PermissionOverwrite {
                                 allow: Permissions::empty(),
