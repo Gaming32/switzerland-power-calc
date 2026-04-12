@@ -1047,7 +1047,6 @@ async fn send_summaries_to_discord(
             player
                 .rank
                 .is_some_and(|r| r.get() as usize <= show_placement_count)
-                || player.rating.rating >= 1500.0
         };
         for new_player in &new_db.players {
             if new_player.rating.deviation > MAXIMUM_CALCED_RD {
