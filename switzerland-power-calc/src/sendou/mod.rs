@@ -1127,7 +1127,22 @@ async fn send_summaries_to_discord(
 }
 
 fn compute_results(tournament_data: &TournamentData) -> Vec<(&str, [SendouId; 3])> {
-    let compute_results_for_stage = |stage_id| {
+    let find_match = |round_id| {
+        tournament_data
+            .matches
+            .iter()
+            .find(|x| x.round_id == round_id)
+    };
+    let find_finals_match = |group_id| {
+        let finals_round = tournament_data
+            .rounds
+            .iter()
+            .filter(|x| x.group_id == group_id)
+            .max_by_key(|x| x.number)?
+            .id;
+        find_match(finals_round)
+    };
+    let compute_results_for_se = |stage_id| {
         let (main_group, third_place_group) = tournament_data
             .groups
             .iter()
@@ -1135,25 +1150,14 @@ fn compute_results(tournament_data: &TournamentData) -> Vec<(&str, [SendouId; 3]
             .sorted_by_key(|x| x.number)
             .map(|x| x.id)
             .next_tuple()?;
-        let finals_round = tournament_data
-            .rounds
-            .iter()
-            .filter(|x| x.group_id == main_group)
-            .max_by_key(|x| x.number)?
-            .id;
-        let third_place_round = tournament_data
-            .rounds
-            .iter()
-            .find(|x| x.group_id == third_place_group)?
-            .id;
-        let finals_match = tournament_data
-            .matches
-            .iter()
-            .find(|x| x.round_id == finals_round)?;
-        let third_place_match = tournament_data
-            .matches
-            .iter()
-            .find(|x| x.round_id == third_place_round)?;
+        let finals_match = find_finals_match(main_group)?;
+        let third_place_match = find_match(
+            tournament_data
+                .rounds
+                .iter()
+                .find(|x| x.group_id == third_place_group)?
+                .id,
+        )?;
         Some([
             itertools::chain(finals_match.opponent1, finals_match.opponent2)
                 .find(|x| x.result == Some(TournamentMatchResult::Win))?
@@ -1169,12 +1173,62 @@ fn compute_results(tournament_data: &TournamentData) -> Vec<(&str, [SendouId; 3]
                 .unwrap(),
         ])
     };
+    let compute_results_for_de = |stage_id| {
+        let (_, losers_group, grand_finals_group) = tournament_data
+            .groups
+            .iter()
+            .filter(|x| x.stage_id == stage_id)
+            .sorted_by_key(|x| x.number)
+            .map(|x| x.id)
+            .next_tuple()?;
+        let (grands_round_1, grands_round_2) = tournament_data
+            .rounds
+            .iter()
+            .filter(|x| x.group_id == grand_finals_group)
+            .sorted_by_key(|x| x.number)
+            .map(|x| x.id)
+            .next_tuple()?;
+        let grands_match_1 = find_match(grands_round_1)?;
+        let grands_match_2 = find_match(grands_round_2)?;
+        let losers_finals_match = find_finals_match(losers_group)?;
+        Some([
+            itertools::chain!(
+                grands_match_2.opponent1,
+                grands_match_2.opponent2,
+                grands_match_1.opponent1,
+                grands_match_1.opponent2
+            )
+            .find(|x| x.result == Some(TournamentMatchResult::Win))?
+            .id
+            .unwrap(),
+            itertools::chain!(
+                grands_match_2.opponent1,
+                grands_match_2.opponent2,
+                grands_match_1.opponent1,
+                grands_match_1.opponent2
+            )
+            .find(|x| x.result == Some(TournamentMatchResult::Loss))?
+            .id
+            .unwrap(),
+            itertools::chain(losers_finals_match.opponent1, losers_finals_match.opponent2)
+                .find(|x| x.result == Some(TournamentMatchResult::Loss))?
+                .id
+                .unwrap(),
+        ])
+    };
     tournament_data
         .stages
         .iter()
-        .filter(|x| matches!(x.settings, TournamentStageSettings::SingleElimination {}))
         .sorted_by_key(|x| x.number)
-        .filter_map(|stage| Some((stage.name.as_str(), compute_results_for_stage(stage.id)?)))
+        .filter_map(|stage| match stage.settings {
+            TournamentStageSettings::SingleElimination {} => {
+                Some((stage.name.as_str(), compute_results_for_se(stage.id)?))
+            }
+            TournamentStageSettings::DoubleElimination {} => {
+                Some((stage.name.as_str(), compute_results_for_de(stage.id)?))
+            }
+            _ => None,
+        })
         .collect()
 }
 
