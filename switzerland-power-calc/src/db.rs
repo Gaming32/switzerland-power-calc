@@ -28,8 +28,6 @@ pub struct SwitzerlandPlayer {
     pub language: Option<Language>,
     #[serde(skip)]
     pub rank: Option<NonZeroU32>,
-    #[serde(default)]
-    pub hide_rank: bool,
     #[serde(flatten)]
     pub rating: Glicko2Rating,
     #[serde(skip)]
@@ -63,7 +61,7 @@ impl SwitzerlandPlayer {
     }
 
     pub fn show_rank(&self) -> bool {
-        !self.hide_rank
+        true // TODO: Base on if RD is low enough
     }
 
     pub fn descending_rating_order_cmp(&self, other: &Self) -> Ordering {

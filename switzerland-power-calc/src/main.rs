@@ -18,7 +18,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fs;
 use std::num::{NonZeroU32, NonZeroUsize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::exit;
 use switzerland_power_animated::{
     AnimationGenerator, AnimationLanguage, MatchOutcome, PowerStatus,
@@ -107,24 +107,6 @@ enum Commands {
         max_message_length: Option<NonZeroUsize>,
         /// The path to the database
         db: PathBuf,
-    },
-    /// Hide the rank of a player in all public places (including animations).
-    HideRank {
-        /// The path to the input database
-        in_db: PathBuf,
-        /// The path to the database to create as a result
-        out_db: PathBuf,
-        /// The player whose rank to hide
-        player: String,
-    },
-    /// Unhide the rank of a player in all public places (including animations).
-    UnhideRank {
-        /// The path to the input database
-        in_db: PathBuf,
-        /// The path to the database to create as a result
-        out_db: PathBuf,
-        /// The player whose rank to unhide
-        player: String,
     },
 }
 
@@ -350,20 +332,6 @@ fn run(args: Args) -> Result<()> {
                 }
             }
         }
-        HideRank {
-            in_db,
-            out_db,
-            player,
-        } => {
-            hide_unhide_rank(&in_db, &out_db, player, true, "Hid", "hidden")?;
-        }
-        UnhideRank {
-            in_db,
-            out_db,
-            player,
-        } => {
-            hide_unhide_rank(&in_db, &out_db, player, false, "Unhid", "shown")?;
-        }
     }
     Ok(())
 }
@@ -469,29 +437,4 @@ pub fn format_sp(rating: Glicko2Rating, show_rd: bool) -> String {
             "".to_string()
         },
     )
-}
-
-fn hide_unhide_rank(
-    in_db: &Path,
-    out_db: &Path,
-    player: String,
-    hide: bool,
-    action: &str,
-    already_action: &str,
-) -> Result<()> {
-    let mut db = Database::read(in_db)?;
-    db.for_each_matching_mut(&vec![player], true, |db, idx| {
-        let player = &mut db.players[idx];
-        if player.hide_rank != hide {
-            player.hide_rank = hide;
-            println!("{action} rank for {}", player.display_name());
-        } else {
-            println!(
-                "Rank for {} already {already_action}",
-                player.display_name()
-            );
-        }
-    });
-    db.write(out_db)?;
-    Ok(())
 }
