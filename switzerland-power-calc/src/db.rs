@@ -1,3 +1,4 @@
+use crate::MAXIMUM_CALCED_RD;
 use crate::error::Result;
 use crate::sendou::SendouId;
 use crate::sendou::lang::Language;
@@ -61,7 +62,7 @@ impl SwitzerlandPlayer {
     }
 
     pub fn show_rank(&self) -> bool {
-        true // TODO: Base on if RD is low enough
+        !self.unrated && self.rating.deviation <= MAXIMUM_CALCED_RD
     }
 
     pub fn descending_rating_order_cmp(&self, other: &Self) -> Ordering {

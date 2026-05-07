@@ -518,7 +518,7 @@ async fn run_tournament(
         players
             .values()
             .filter(|p| p.show_rank())
-            .map(|p| p.rating)
+            .map(|p| (p.id.clone(), p.rating))
             .collect_vec(),
     );
 
@@ -572,13 +572,7 @@ async fn run_tournament(
                     .and_then(|team| {
                         let player_id = PlayerId::Sendou(team.members.first().unwrap().user_id);
                         let player = new_players.get(&player_id)?;
-                        Some((
-                            team,
-                            player_id,
-                            player.rating,
-                            player.show_rank(),
-                            player.language.unwrap(),
-                        ))
+                        Some((team, player_id, player.rating, player.language.unwrap()))
                     })
                     .unwrap()
             };
@@ -592,10 +586,8 @@ async fn run_tournament(
                 continue;
             }
             let new_match = completed_matches.insert(tourney_match.id);
-            let (team1, player1, rating1, show_rank1, language1) =
-                get_player(&tourney_match.opponent1);
-            let (team2, player2, rating2, show_rank2, language2) =
-                get_player(&tourney_match.opponent2);
+            let (team1, player1, rating1, language1) = get_player(&tourney_match.opponent1);
+            let (team2, player2, rating2, language2) = get_player(&tourney_match.opponent2);
             let (new_rating1, new_rating2) = glicko2(
                 &rating1,
                 &rating2,
@@ -613,7 +605,6 @@ async fn run_tournament(
                                            other_team: &TournamentTeam,
                                            player,
                                            new_rating,
-                                           show_rank: bool,
                                            language|
                    -> Result<()> {
                 let player = new_players.get_mut(player).unwrap();
@@ -625,14 +616,15 @@ async fn run_tournament(
                     return Ok(());
                 }
 
-                let rank_change = show_rank
-                    .then(|| {
-                        let old_rank = ranked_players.get_rank_and_remove(old_player.rating) + 1;
-                        let new_rank = ranked_players.insert_and_get_rank(player.rating) + 1;
-                        (old_rank <= show_placement_count || new_rank <= show_placement_count)
-                            .then_some((old_rank, new_rank))
-                    })
-                    .flatten();
+                let old_rank = ranked_players
+                    .get_rank_and_remove(&old_player.id, old_player.rating)
+                    .unwrap_or_default()
+                    + 1;
+                let new_rank =
+                    ranked_players.insert_and_get_rank(old_player.id.clone(), player.rating) + 1;
+                let rank_change = (old_rank <= show_placement_count
+                    || new_rank <= show_placement_count)
+                    .then_some((old_rank, new_rank));
 
                 writeln!(
                     command_engine.printer,
@@ -665,7 +657,6 @@ async fn run_tournament(
                 team2,
                 &player1,
                 new_rating1,
-                show_rank1,
                 language1,
             )
             .await?;
@@ -675,7 +666,6 @@ async fn run_tournament(
                 team1,
                 &player2,
                 new_rating2,
-                show_rank2,
                 language2,
             )
             .await?;
