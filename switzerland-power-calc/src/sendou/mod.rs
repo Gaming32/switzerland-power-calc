@@ -886,7 +886,7 @@ fn send_progress_message_to_player(
             if let PowerStatus::SetPlayed { matches, .. } = &mut power_status {
                 let match_results = http_client
                     .get(format!(
-                        "https://sendou.ink/to/{tourney_id}/matches/{set_id}.data?_routes=features/tournament-bracket/routes/to.$id.matches.$mid"
+                        "https://sendou.ink/to/{tourney_id}/matches/{set_id}.data?_routes=features/tournament-match/routes/to.$id.matches.$mid"
                     ))
                     .send()
                     .await?
@@ -909,7 +909,6 @@ fn send_progress_message_to_player(
             let animation = animation_generator
                 .generate(power_status, language.into())
                 .await?;
-            // TODO: Save animation to file for recovery if an error occurs
             // discord_channel
             //     .create_permission(
             //         discord_http.http(),

@@ -163,7 +163,7 @@ pub struct TournamentTeamCheckIn {}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ToMatchResponse {
-    #[serde(rename = "features/tournament-bracket/routes/to.$id.matches.$mid")]
+    #[serde(rename = "features/tournament-match/routes/to.$id.matches.$mid")]
     pub to_match: MatchDataWrapper,
 }
 
