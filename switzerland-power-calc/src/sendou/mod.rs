@@ -40,7 +40,7 @@ use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as FmtWrite;
 use std::io::{Read, Write as IoWrite};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
@@ -905,9 +905,11 @@ fn send_progress_message_to_player(
                     };
                 }
             }
+            let filename = format!("set-{set_id}-{my_team_id}.webp");
             let animation = animation_generator
                 .generate(power_status, language.into())
                 .await?;
+            // TODO: Save animation to file for recovery if an error occurs
             // discord_channel
             //     .create_permission(
             //         discord_http.http(),
@@ -918,17 +920,21 @@ fn send_progress_message_to_player(
             //         },
             //     )
             //     .await?;
-            discord_channel
+            let send_result = discord_channel
                 .send_message(
                     discord_http,
                     CreateMessage::new()
                         .content(message)
-                        .add_file(CreateAttachment::bytes(
-                            animation,
-                            format!("set-{set_id}-{my_team_id}.webp"),
-                        )),
+                        .add_file(CreateAttachment::bytes(animation.clone(), &filename)),
                 )
-                .await?;
+                .await;
+            if let Err(result) = send_result {
+                if let Ok(backups_dir) = env::<PathBuf>("GENERATED_ANIM_BACKUPS_DIR")
+                    && let Err(err) = fs::write(backups_dir.join(&filename), &animation) {
+                        println!("Failed to save backup animation file for {set_id}: {err}");
+                    }
+                return Err(result.into());
+            }
             Ok::<(), Error>(())
         }
         .then(async move |result| {
