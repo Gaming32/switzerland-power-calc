@@ -21,7 +21,7 @@ default-features = false
 features = ["ttf", "image", "static-link", "use-vcpkg"]
 
 [build-dependencies]
-serde_json = "1.0.145"
+serde_json = "1.0.150"
 derive_more = { workspace = true, features = ["from_str"] }
 hashlink.workspace = true
 parse-format = "0.1.0"
