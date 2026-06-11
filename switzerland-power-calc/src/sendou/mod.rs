@@ -625,6 +625,9 @@ async fn run_tournament(
                 let rank_change = (old_rank <= show_placement_count
                     || new_rank <= show_placement_count)
                     .then_some((old_rank, new_rank));
+                if player.rating.deviation <= MAXIMUM_CALCED_RD {
+                    player.calced = true;
+                }
 
                 writeln!(
                     command_engine.printer,
@@ -642,9 +645,8 @@ async fn run_tournament(
                     team,
                     other_team,
                     opponent.unwrap(),
-                    old_player.rating,
-                    player.rating,
-                    !old_player.unrated,
+                    &old_player,
+                    player,
                     rank_change,
                     top_player_count,
                     language,
@@ -810,9 +812,8 @@ fn send_progress_message_to_player(
     team: &TournamentTeam,
     other_team: &TournamentTeam,
     my_result: TournamentMatchOpponent,
-    old_rating: Glicko2Rating,
-    new_rating: Glicko2Rating,
-    was_rated: bool,
+    old_player: &SwitzerlandPlayer,
+    new_player: &SwitzerlandPlayer,
     rank_change: Option<(usize, usize)>,
     top_rank: usize,
     original_language: Language,
@@ -825,25 +826,25 @@ fn send_progress_message_to_player(
         const DEFAULT_RD: f64 = 350.0;
         1.0 - (deviation - MAXIMUM_CALCED_RD) / (DEFAULT_RD - MAXIMUM_CALCED_RD)
     }
-
-    let old_calc_percent = if was_rated {
-        calc_percentage(old_rating.deviation)
-    } else {
+    let old_calc_percent = if old_player.unrated {
         0.0
+    } else {
+        calc_percentage(old_player.rating.deviation)
     };
-    let new_calc_percent = calc_percentage(new_rating.deviation);
-    let mut power_status = if old_calc_percent >= 1.0 {
+    let new_calc_percent = calc_percentage(new_player.rating.deviation);
+
+    let mut power_status = if old_player.calced {
         PowerStatus::SetPlayed {
             matches: Default::default(),
-            old_power: old_rating.rating,
-            new_power: new_rating.rating,
+            old_power: old_player.rating.rating,
+            new_power: new_player.rating.rating,
             rank_change: rank_change.map(|(old, new)| (old as u32, new as u32)),
             top_rank: top_rank as u32,
         }
-    } else if new_calc_percent >= 1.0 {
+    } else if new_player.calced {
         PowerStatus::Calculated {
             prev_calc_percent: old_calc_percent,
-            power: new_rating.rating,
+            power: new_player.rating.rating,
             rank: rank_change.map(|(_, new)| new as u32),
             top_rank: top_rank as u32,
         }

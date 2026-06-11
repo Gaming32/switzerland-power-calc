@@ -384,9 +384,7 @@ pub fn format_player_rank_summary(
     show_rank: bool,
     show_rd: bool,
 ) -> String {
-    if let Some(old_player) =
-        old_player.filter(|p| show_rd || p.rating.deviation <= MAXIMUM_CALCED_RD)
-    {
+    if let Some(old_player) = old_player.filter(|p| show_rd || p.calced) {
         format!(
             "{} → {} ({:+.1}){}",
             format_sp(old_player.rating, show_rd),
@@ -404,7 +402,7 @@ pub fn format_player_rank_summary(
                             }
                         )
                     }
-                    (None, Some(new_rank)) => format!("; {}", new_rank.get()),
+                    (None, Some(new_rank)) => format!("; #{}", new_rank.get()),
                     (_, None) => "".to_string(),
                 }
             } else {

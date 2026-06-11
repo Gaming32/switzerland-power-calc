@@ -5,6 +5,7 @@ use crate::sendou::lang::Language;
 use hashlink::LinkedHashMap;
 use itertools::Itertools;
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use skillratings::glicko2::Glicko2Rating;
 use std::borrow::Cow;
 use std::cmp::Ordering;
@@ -17,6 +18,22 @@ pub type SwitzerlandPlayerMap = LinkedHashMap<PlayerId, SwitzerlandPlayer>;
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Database {
     pub players: Vec<SwitzerlandPlayer>,
+    #[serde(default)]
+    version: DbVersion,
+}
+
+#[derive(
+    Serialize_repr, Deserialize_repr, Debug, Copy, Clone, Ord, PartialOrd, Eq, PartialEq, Default,
+)]
+#[repr(u32)]
+enum DbVersion {
+    #[default]
+    Old,
+    AddedCalced,
+}
+
+impl DbVersion {
+    const CURRENT: Self = Self::AddedCalced;
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
@@ -27,6 +44,8 @@ pub struct SwitzerlandPlayer {
     pub display_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<Language>,
+    #[serde(default)]
+    pub calced: bool,
     #[serde(skip)]
     pub rank: Option<NonZeroU32>,
     #[serde(flatten)]
@@ -62,7 +81,7 @@ impl SwitzerlandPlayer {
     }
 
     pub fn show_rank(&self) -> bool {
-        !self.unrated && self.rating.deviation <= MAXIMUM_CALCED_RD
+        !self.unrated && self.calced
     }
 
     pub fn descending_rating_order_cmp(&self, other: &Self) -> Ordering {
@@ -90,7 +109,10 @@ impl Default for PlayerId {
 
 impl Database {
     pub fn new() -> Self {
-        Self { players: vec![] }
+        Self {
+            players: vec![],
+            version: DbVersion::CURRENT,
+        }
     }
 
     pub fn new_from_map(map: SwitzerlandPlayerMap) -> Self {
@@ -100,9 +122,25 @@ impl Database {
                 .map(|(_, v)| v)
                 .filter(|x| !x.unrated)
                 .collect(),
+            version: DbVersion::CURRENT,
         };
         result.sort();
         result
+    }
+
+    fn migrate(&mut self) {
+        while self.version < DbVersion::CURRENT {
+            match self.version {
+                DbVersion::Old => {
+                    for player in &mut self.players {
+                        if player.rating.deviation <= MAXIMUM_CALCED_RD {
+                            player.calced = true;
+                        }
+                    }
+                }
+                DbVersion::CURRENT => unreachable!(),
+            }
+        }
     }
 
     pub fn sort(&mut self) {
@@ -126,6 +164,7 @@ impl Database {
 
     pub fn read(file: &Path) -> Result<Self> {
         let mut result: Database = serde_cbor::from_reader(fs::File::open(file)?)?;
+        result.migrate();
         result.sort();
         Ok(result)
     }
