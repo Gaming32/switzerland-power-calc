@@ -46,6 +46,8 @@ pub struct SwitzerlandPlayer {
     pub language: Option<Language>,
     #[serde(default)]
     pub calced: bool,
+    #[serde(default)]
+    pub since_played: u32,
     #[serde(skip)]
     pub rank: Option<NonZeroU32>,
     #[serde(flatten)]

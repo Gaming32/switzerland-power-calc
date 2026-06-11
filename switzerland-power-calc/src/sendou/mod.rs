@@ -36,7 +36,7 @@ use serenity::all::{
 use serenity::futures::TryStreamExt;
 use serenity::model::Timestamp;
 use skillratings::Outcomes;
-use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2};
+use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2, decay_deviation};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as FmtWrite;
 use std::io::{Read, Write as IoWrite};
@@ -272,12 +272,22 @@ async fn initialize_teams<'a>(
     http_client: &Client,
 ) -> Result<TeamsMap<'a>> {
     let mut teams = HashMap::new();
+    for player in players.values_mut() {
+        player.since_played += 1;
+    }
     for team in &tournament.context.teams {
         let player = team.members.first().expect("Sendou team has no members");
         let starting_rating = team.avg_seeding_skill_ordinal.clamp(-10.0, 40.0);
         teams.insert(team.id, team);
         players
             .entry(PlayerId::Sendou(player.user_id))
+            .and_modify(|player| {
+                // since_played will be 1 above the desired value due to the increment above
+                for _ in 1..player.since_played {
+                    player.rating = decay_deviation(&player.rating);
+                }
+                player.since_played = 0;
+            })
             .or_insert_with(|| SwitzerlandPlayer {
                 id: PlayerId::Sendou(player.user_id),
                 rating: Glicko2Rating {
