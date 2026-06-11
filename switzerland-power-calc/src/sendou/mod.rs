@@ -36,7 +36,7 @@ use serenity::all::{
 use serenity::futures::TryStreamExt;
 use serenity::model::Timestamp;
 use skillratings::Outcomes;
-use skillratings::glicko2::{Glicko2Config, Glicko2Rating, glicko2, decay_deviation};
+use skillratings::glicko2::{Glicko2Config, Glicko2Rating, decay_deviation, glicko2};
 use std::collections::{HashMap, HashSet};
 use std::fmt::Write as FmtWrite;
 use std::io::{Read, Write as IoWrite};
