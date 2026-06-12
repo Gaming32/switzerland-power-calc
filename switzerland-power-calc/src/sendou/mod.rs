@@ -621,6 +621,9 @@ async fn run_tournament(
                 let old_player = player.clone();
                 player.rating = new_rating;
                 player.unrated = false;
+                if player.rating.deviation <= MAXIMUM_CALCED_RD {
+                    player.calced = true;
+                }
 
                 if !new_match {
                     return Ok(());
@@ -635,9 +638,6 @@ async fn run_tournament(
                 let rank_change = (old_rank <= show_placement_count
                     || new_rank <= show_placement_count)
                     .then_some((old_rank, new_rank));
-                if player.rating.deviation <= MAXIMUM_CALCED_RD {
-                    player.calced = true;
-                }
 
                 writeln!(
                     command_engine.printer,
