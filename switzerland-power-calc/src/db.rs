@@ -139,6 +139,7 @@ impl Database {
                             player.calced = true;
                         }
                     }
+                    self.version = DbVersion::AddedCalced;
                 }
                 DbVersion::CURRENT => unreachable!(),
             }
