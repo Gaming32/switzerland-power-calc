@@ -1225,7 +1225,7 @@ fn compute_results(tournament_data: &TournamentData) -> Vec<(&str, [SendouId; 3]
     tournament_data
         .stages
         .iter()
-        .sorted_by_key(|x| x.number)
+        .sorted_by_key(|x| &x.name)
         .filter_map(|stage| match stage.settings {
             TournamentStageSettings::SingleElimination {} => {
                 Some((stage.name.as_str(), compute_results_for_se(stage.id)?))

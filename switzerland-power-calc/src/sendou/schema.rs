@@ -47,7 +47,6 @@ pub struct TournamentData {
 pub struct TournamentStage {
     pub id: SendouId,
     pub name: String,
-    pub number: u32,
     #[serde(flatten)]
     pub settings: TournamentStageSettings,
 }
