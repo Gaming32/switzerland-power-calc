@@ -524,13 +524,6 @@ async fn run_tournament(
     let mut command_engine = CommandEngine::new()?;
 
     let mut completed_matches = HashSet::new();
-    let mut ranked_players = RankVec::new(
-        players
-            .values()
-            .filter(|p| p.show_rank())
-            .map(|p| (p.id.clone(), p.rating))
-            .collect_vec(),
-    );
 
     let animation_generator = AsyncAnimationGenerator::new().await?;
     let top_player_count = leaderboard_count(players.len());
@@ -546,6 +539,13 @@ async fn run_tournament(
             .collect();
 
         let mut new_players = players.clone();
+        let mut ranked_players = RankVec::new(
+            players
+                .values()
+                .filter(|p| p.show_rank())
+                .map(|p| (p.id.clone(), p.rating))
+                .collect_vec(),
+        );
 
         for tourney_match in tournament.data.matches {
             if command_engine.ignored_matches.contains(&tourney_match.id) {
@@ -625,10 +625,6 @@ async fn run_tournament(
                     player.calced = true;
                 }
 
-                if !new_match {
-                    return Ok(());
-                }
-
                 let old_rank = ranked_players
                     .get_rank_and_remove(&old_player.id, old_player.rating)
                     .unwrap_or_default()
@@ -638,6 +634,10 @@ async fn run_tournament(
                 let rank_change = (old_rank <= show_placement_count
                     || new_rank <= show_placement_count)
                     .then_some((old_rank, new_rank));
+
+                if !new_match {
+                    return Ok(());
+                }
 
                 writeln!(
                     command_engine.printer,
