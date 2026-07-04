@@ -627,8 +627,7 @@ async fn run_tournament(
 
                 let old_rank = ranked_players
                     .get_rank_and_remove(&old_player.id, old_player.rating)
-                    .unwrap_or_default()
-                    + 1;
+                    .map_or(u32::MAX as usize, |r| r + 1);
                 let new_rank =
                     ranked_players.insert_and_get_rank(old_player.id.clone(), player.rating) + 1;
                 let rank_change = (old_rank <= show_placement_count
