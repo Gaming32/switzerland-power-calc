@@ -1,13 +1,17 @@
-use crate::Result;
+use crate::{query_json, Result};
 use crate::db::{Database, PlayerId};
-use crate::sendou::schema::SendouUserRoot;
+use crate::sendou::schema::{GetUserIdsResponse, GetUserResponse};
 use crate::sendou::turbo_stream::TurboStreamed;
 use ansi_term::Color;
 use itertools::Itertools;
-use reqwest::Client;
+use reqwest::{header, Client};
 use std::io;
 use std::io::Write;
 use std::path::Path;
+use reqwest::header::HeaderMap;
+use serde::Deserialize;
+use crate::sendou::SendouId;
+use crate::sendou::utils::sendou_read_token_headers;
 
 #[derive(clap::ValueEnum, Copy, Clone, Debug)]
 pub enum MigrationStyle {
@@ -42,7 +46,9 @@ pub async fn migration_cli(
         }
     )));
 
-    let client = Client::new();
+    let client = Client::builder()
+        .default_headers(sendou_read_token_headers()?)
+        .build()?;
     let mut players_map = db.clone().into_map();
     let mut player_name = String::new();
 
@@ -67,9 +73,9 @@ pub async fn migration_cli(
                         Ok(user) => {
                             println!(
                                 "Found player '{}' with ID {}",
-                                user.user.username, user.user.id
+                                user.name, user.id
                             );
-                            break Some(user.user);
+                            break Some(user);
                         }
                         Err(e) => println!(
                             "{}",
@@ -80,7 +86,7 @@ pub async fn migration_cli(
                 let Some(sendou) = sendou else {
                     continue;
                 };
-                (PlayerId::Sendou(sendou.id), Some(sendou.username))
+                (PlayerId::Sendou(sendou.id), Some(sendou.name))
             }
             MigrationStyle::ChangeName => {
                 println!("Current player ID: {}", legacy_name);
@@ -105,12 +111,7 @@ pub async fn migration_cli(
     Ok(())
 }
 
-async fn request_player_info(client: &Client, slug: &str) -> Result<SendouUserRoot> {
-    Ok(client
-        .get(format!("https://sendou.ink/u/{slug}.data"))
-        .send()
-        .await?
-        .json::<TurboStreamed<SendouUserRoot>>()
-        .await?
-        .0)
+async fn request_player_info(client: &Client, slug: &str) -> Result<GetUserResponse> {
+    let ids: GetUserIdsResponse = query_json!(client, "/api/user/{}/ids", slug);
+    Ok(query_json!(client, "/api/user/{}", ids.id))
 }

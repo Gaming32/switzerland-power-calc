@@ -1,6 +1,7 @@
 use std::backtrace::Backtrace;
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
+use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -21,6 +22,8 @@ pub enum ErrorKind {
     InvalidLogEnv(#[from] tracing_subscriber::filter::FromEnvError),
     #[error("HTTP error: {0}")]
     Http(#[from] reqwest::Error),
+    #[error("Invalid HTTP header value: {0}")]
+    HttpHeaderValue(#[from] InvalidHeaderValue),
     #[error("URL parsing error: {0}")]
     Url(#[from] url::ParseError),
     #[error("Discord error: {0}")]
