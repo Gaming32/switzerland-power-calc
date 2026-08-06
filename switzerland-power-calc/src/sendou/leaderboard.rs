@@ -1,8 +1,8 @@
 use crate::counts::leaderboard_count;
 use crate::db::{Database, PlayerId, SwitzerlandPlayerMap};
 use crate::format_sp;
-use crate::sendou::utils::env_str;
 use crate::sendou::format_link;
+use crate::sendou::utils::env_str;
 use serenity::all::{Mentionable, UserId};
 use std::cmp::Ordering;
 use std::collections::HashMap;

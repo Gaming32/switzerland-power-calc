@@ -3,10 +3,10 @@ use crate::error;
 use crate::error::ErrorKind;
 use ansi_term::Color;
 use itertools::Itertools;
+use reqwest::header;
 use reqwest::header::{HeaderMap, HeaderValue};
 use std::cmp::Ordering;
 use std::str::FromStr;
-use reqwest::header;
 
 pub fn print_seeding_instructions<'a, Team, Iter, Format>(
     players: &SwitzerlandPlayerMap,
@@ -65,10 +65,10 @@ macro_rules! query_json {
 pub fn sendou_read_token_headers() -> error::Result<HeaderMap> {
     let mut bearer = HeaderValue::from_str(&format!("Bearer {}", env_str("SENDOU_READ_TOKEN")?))?;
     bearer.set_sensitive(true);
-    
+
     let mut headers = HeaderMap::new();
     headers.insert(header::AUTHORIZATION, bearer);
-    
+
     Ok(headers)
 }
 

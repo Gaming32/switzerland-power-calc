@@ -1,13 +1,13 @@
-use crate::{query_json, Result};
 use crate::db::{Database, PlayerId};
 use crate::sendou::schema::{GetUserIdsResponse, GetUserResponse};
+use crate::sendou::utils::sendou_read_token_headers;
+use crate::{Result, query_json};
 use ansi_term::Color;
 use itertools::Itertools;
 use reqwest::Client;
 use std::io;
 use std::io::Write;
 use std::path::Path;
-use crate::sendou::utils::sendou_read_token_headers;
 
 #[derive(clap::ValueEnum, Copy, Clone, Debug)]
 pub enum MigrationStyle {
@@ -67,10 +67,7 @@ pub async fn migration_cli(
                     }
                     match request_player_info(&client, player_slug).await {
                         Ok(user) => {
-                            println!(
-                                "Found player '{}' with ID {}",
-                                user.name, user.id
-                            );
+                            println!("Found player '{}' with ID {}", user.name, user.id);
                             break Some(user);
                         }
                         Err(e) => println!(

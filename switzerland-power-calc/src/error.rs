@@ -1,7 +1,7 @@
+use reqwest::header::InvalidHeaderValue;
 use std::backtrace::Backtrace;
 use std::fmt::{Debug, Display, Formatter};
 use std::io;
-use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
