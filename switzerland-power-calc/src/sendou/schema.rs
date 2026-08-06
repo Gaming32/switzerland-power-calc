@@ -61,6 +61,7 @@ pub enum TournamentStageSettings {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TournamentGroup {
     pub id: SendouId,
     pub number: u32,
@@ -68,6 +69,7 @@ pub struct TournamentGroup {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TournamentRound {
     pub group_id: SendouId,
     pub id: SendouId,
@@ -90,12 +92,13 @@ pub enum TournamentRoundMapsMatchType {
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TournamentMatch {
     pub id: SendouId,
     pub opponent1: Option<TournamentMatchOpponent>,
     pub opponent2: Option<TournamentMatchOpponent>,
     pub round_id: SendouId,
-    pub status: TournamentMatchStatus,
+    pub winner_side: Option<TournamentMatchWinnerSide>,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
@@ -103,24 +106,13 @@ pub struct TournamentMatchOpponent {
     pub id: Option<SendouId>,
     #[serde(default)]
     pub score: u32,
-    pub result: Option<TournamentMatchResult>,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub enum TournamentMatchResult {
-    Win,
-    Loss,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Deserialize_repr)]
-#[repr(u8)]
-pub enum TournamentMatchStatus {
-    Locked = 0,
-    Waiting = 1,
-    Ready = 2,
-    Running = 3,
-    Completed = 4,
+pub enum TournamentMatchWinnerSide {
+    Opponent1,
+    Opponent2,
 }
 
 #[serde_as]
@@ -129,8 +121,8 @@ pub enum TournamentMatchStatus {
 pub struct TournamentContext {
     pub id: SendouId,
     pub name: String,
-    #[serde(with = "chrono::serde::ts_seconds")]
-    pub start_time: DateTime<Utc>,
+    // #[serde(with = "chrono::serde::ts_seconds")]
+    // pub start_time: DateTime<Utc>,
     #[serde_as(as = "BoolFromInt")]
     pub is_finalized: bool,
     pub teams: Vec<TournamentTeam>,

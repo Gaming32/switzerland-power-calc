@@ -10,11 +10,7 @@ mod types;
 use crate::db::{Database, PlayerId, SwitzerlandPlayer, SwitzerlandPlayerMap};
 use crate::sendou::discord::{DiscordEventHandler, DiscordHttp};
 use crate::sendou::lang::{CommandIdDisplay, Language};
-use crate::sendou::schema::{
-    ToMatchResponse, ToResponse, Tournament, TournamentContext, TournamentData, TournamentMatch,
-    TournamentMatchOpponent, TournamentMatchResult, TournamentMatchStatus,
-    TournamentRoundMapsMatchType, TournamentStageSettings, TournamentTeam,
-};
+use crate::sendou::schema::{ToMatchResponse, ToResponse, Tournament, TournamentContext, TournamentData, TournamentMatch, TournamentMatchOpponent, TournamentMatchWinnerSide, TournamentRoundMapsMatchType, TournamentStageSettings, TournamentTeam};
 use crate::sendou::types::{DiscordChannelsMap, GetTournamentFn, TeamsMap};
 use crate::{
     Error, MAXIMUM_CALCED_RD, Result, format_player_rank_summary, format_player_simply, format_sp,
@@ -357,26 +353,26 @@ async fn wait_for_tournament_start(
     tournament_context: &TournamentContext,
     get_tournament: &impl GetTournamentFn,
 ) -> Result<()> {
-    if let Ok(delay) = tournament_context
-        .start_time
-        .signed_duration_since(Utc::now())
-        .to_std()
-    {
-        println!(
-            "Waiting {}m {}s for tournament start time...",
-            delay.as_secs() / 60,
-            delay.as_secs() % 60
-        );
-        sleep(delay).await;
-    }
-
-    println!("Waiting for tournament to be started...");
-    loop {
-        if !get_tournament().await?.data.stages.is_empty() {
-            break;
-        }
-        sleep(POLL_TIME).await;
-    }
+    // if let Ok(delay) = tournament_context
+    //     .start_time
+    //     .signed_duration_since(Utc::now())
+    //     .to_std()
+    // {
+    //     println!(
+    //         "Waiting {}m {}s for tournament start time...",
+    //         delay.as_secs() / 60,
+    //         delay.as_secs() % 60
+    //     );
+    //     sleep(delay).await;
+    // }
+    // 
+    // println!("Waiting for tournament to be started...");
+    // loop {
+    //     if !get_tournament().await?.data.stages.is_empty() {
+    //         break;
+    //     }
+    //     sleep(POLL_TIME).await;
+    // }
 
     Ok(())
 }
@@ -553,13 +549,7 @@ async fn run_tournament(
             }
 
             let match_round = rounds[&tourney_match.round_id];
-            if tourney_match
-                .opponent1
-                .is_some_and(|o| o.result == Some(TournamentMatchResult::Win))
-                || tourney_match
-                    .opponent2
-                    .is_some_and(|o| o.result == Some(TournamentMatchResult::Win))
-            {
+            if tourney_match.winner_side.is_some() {
                 let score1 = tourney_match.opponent1.unwrap().score;
                 let score2 = tourney_match.opponent2.unwrap().score;
                 let match_ended_normally = match match_round.maps.match_type {
@@ -586,12 +576,10 @@ async fn run_tournament(
                     })
                     .unwrap()
             };
-            if tourney_match.status == TournamentMatchStatus::Ready
-                && (tourney_match.opponent1.is_none() || tourney_match.opponent2.is_none())
-            {
+            if tourney_match.opponent1.is_none() || tourney_match.opponent2.is_none() {
                 continue; // BYE
             }
-            if tourney_match.status != TournamentMatchStatus::Completed {
+            if tourney_match.winner_side.is_none() {
                 completed_matches.remove(&tourney_match.id);
                 continue;
             }
@@ -601,16 +589,16 @@ async fn run_tournament(
             let (new_rating1, new_rating2) = glicko2(
                 &rating1,
                 &rating2,
-                &match tourney_match.opponent1.unwrap().result.unwrap() {
-                    TournamentMatchResult::Win => Outcomes::WIN,
-                    TournamentMatchResult::Loss => Outcomes::LOSS,
+                &match tourney_match.winner_side.unwrap() {
+                    TournamentMatchWinnerSide::Opponent1 => Outcomes::WIN,
+                    TournamentMatchWinnerSide::Opponent2 => Outcomes::LOSS,
                 },
                 &Glicko2Config::default(),
             );
             if new_match {
                 writeln!(command_engine.printer, "In match {}:", tourney_match.id)?;
             }
-            let mut update_player = async |opponent: Option<TournamentMatchOpponent>,
+            let mut update_player = async |win,
                                            team: &TournamentTeam,
                                            other_team: &TournamentTeam,
                                            player,
@@ -653,7 +641,7 @@ async fn run_tournament(
                     &animation_generator,
                     team,
                     other_team,
-                    opponent.unwrap(),
+                    win,
                     &old_player,
                     player,
                     rank_change,
@@ -663,7 +651,7 @@ async fn run_tournament(
                 Ok(())
             };
             update_player(
-                tourney_match.opponent1,
+                tourney_match.winner_side == Some(TournamentMatchWinnerSide::Opponent1),
                 team1,
                 team2,
                 &player1,
@@ -672,7 +660,7 @@ async fn run_tournament(
             )
             .await?;
             update_player(
-                tourney_match.opponent2,
+                tourney_match.winner_side == Some(TournamentMatchWinnerSide::Opponent2),
                 team2,
                 team1,
                 &player2,
@@ -820,7 +808,7 @@ fn send_progress_message_to_player(
     animation_generator: &AsyncAnimationGenerator,
     team: &TournamentTeam,
     other_team: &TournamentTeam,
-    my_result: TournamentMatchOpponent,
+    win: bool,
     old_player: &SwitzerlandPlayer,
     new_player: &SwitzerlandPlayer,
     rank_change: Option<(usize, usize)>,
@@ -873,9 +861,9 @@ fn send_progress_message_to_player(
 
     let message = format_link(
         &language.round_played(
-            match my_result.result.unwrap() {
-                TournamentMatchResult::Win => language.to_animation_language().win(),
-                TournamentMatchResult::Loss => language.to_animation_language().lose(),
+            match win {
+                true => language.to_animation_language().win(),
+                false => language.to_animation_language().lose(),
             },
             &other_team.members.first().unwrap().username,
         ),
@@ -1164,63 +1152,63 @@ fn compute_results(tournament_data: &TournamentData) -> Vec<(&str, [SendouId; 3]
                 .id,
         )?;
         Some([
-            itertools::chain(finals_match.opponent1, finals_match.opponent2)
-                .find(|x| x.result == Some(TournamentMatchResult::Win))?
-                .id
-                .unwrap(),
-            itertools::chain(finals_match.opponent1, finals_match.opponent2)
-                .find(|x| x.result == Some(TournamentMatchResult::Loss))?
-                .id
-                .unwrap(),
-            itertools::chain(third_place_match.opponent1, third_place_match.opponent2)
-                .find(|x| x.result == Some(TournamentMatchResult::Win))?
-                .id
-                .unwrap(),
+            match finals_match.winner_side.unwrap() {
+                TournamentMatchWinnerSide::Opponent1 => &finals_match.opponent1,
+                TournamentMatchWinnerSide::Opponent2 => &finals_match.opponent2,
+            }.unwrap().id.unwrap(),
+            match finals_match.winner_side.unwrap() {
+                TournamentMatchWinnerSide::Opponent1 => &finals_match.opponent2,
+                TournamentMatchWinnerSide::Opponent2 => &finals_match.opponent1,
+            }.unwrap().id.unwrap(),
+            match third_place_match.winner_side.unwrap() {
+                TournamentMatchWinnerSide::Opponent1 => &third_place_match.opponent1,
+                TournamentMatchWinnerSide::Opponent2 => &third_place_match.opponent2,
+            }.unwrap().id.unwrap(),
         ])
     };
-    let compute_results_for_de = |stage_id| {
-        let (_, losers_group, grand_finals_group) = tournament_data
-            .groups
-            .iter()
-            .filter(|x| x.stage_id == stage_id)
-            .sorted_by_key(|x| x.number)
-            .map(|x| x.id)
-            .next_tuple()?;
-        let (grands_round_1, grands_round_2) = tournament_data
-            .rounds
-            .iter()
-            .filter(|x| x.group_id == grand_finals_group)
-            .sorted_by_key(|x| x.number)
-            .map(|x| x.id)
-            .next_tuple()?;
-        let grands_match_1 = find_match(grands_round_1)?;
-        let grands_match_2 = find_match(grands_round_2)?;
-        let losers_finals_match = find_finals_match(losers_group)?;
-        Some([
-            itertools::chain!(
-                grands_match_2.opponent1,
-                grands_match_2.opponent2,
-                grands_match_1.opponent1,
-                grands_match_1.opponent2
-            )
-            .find(|x| x.result == Some(TournamentMatchResult::Win))?
-            .id
-            .unwrap(),
-            itertools::chain!(
-                grands_match_2.opponent1,
-                grands_match_2.opponent2,
-                grands_match_1.opponent1,
-                grands_match_1.opponent2
-            )
-            .find(|x| x.result == Some(TournamentMatchResult::Loss))?
-            .id
-            .unwrap(),
-            itertools::chain(losers_finals_match.opponent1, losers_finals_match.opponent2)
-                .find(|x| x.result == Some(TournamentMatchResult::Loss))?
-                .id
-                .unwrap(),
-        ])
-    };
+    // let compute_results_for_de = |stage_id| {
+    //     let (_, losers_group, grand_finals_group) = tournament_data
+    //         .groups
+    //         .iter()
+    //         .filter(|x| x.stage_id == stage_id)
+    //         .sorted_by_key(|x| x.number)
+    //         .map(|x| x.id)
+    //         .next_tuple()?;
+    //     let (grands_round_1, grands_round_2) = tournament_data
+    //         .rounds
+    //         .iter()
+    //         .filter(|x| x.group_id == grand_finals_group)
+    //         .sorted_by_key(|x| x.number)
+    //         .map(|x| x.id)
+    //         .next_tuple()?;
+    //     let grands_match_1 = find_match(grands_round_1)?;
+    //     let grands_match_2 = find_match(grands_round_2)?;
+    //     let losers_finals_match = find_finals_match(losers_group)?;
+    //     Some([
+    //         itertools::chain!(
+    //             grands_match_2.opponent1,
+    //             grands_match_2.opponent2,
+    //             grands_match_1.opponent1,
+    //             grands_match_1.opponent2
+    //         )
+    //         .find(|x| x.result == Some(TournamentMatchResult::Win))?
+    //         .id
+    //         .unwrap(),
+    //         itertools::chain!(
+    //             grands_match_2.opponent1,
+    //             grands_match_2.opponent2,
+    //             grands_match_1.opponent1,
+    //             grands_match_1.opponent2
+    //         )
+    //         .find(|x| x.result == Some(TournamentMatchResult::Loss))?
+    //         .id
+    //         .unwrap(),
+    //         itertools::chain(losers_finals_match.opponent1, losers_finals_match.opponent2)
+    //             .find(|x| x.result == Some(TournamentMatchResult::Loss))?
+    //             .id
+    //             .unwrap(),
+    //     ])
+    // };
     tournament_data
         .stages
         .iter()
@@ -1229,9 +1217,9 @@ fn compute_results(tournament_data: &TournamentData) -> Vec<(&str, [SendouId; 3]
             TournamentStageSettings::SingleElimination {} => {
                 Some((stage.name.as_str(), compute_results_for_se(stage.id)?))
             }
-            TournamentStageSettings::DoubleElimination {} => {
-                Some((stage.name.as_str(), compute_results_for_de(stage.id)?))
-            }
+            // TournamentStageSettings::DoubleElimination {} => {
+            //     Some((stage.name.as_str(), compute_results_for_de(stage.id)?))
+            // }
             _ => None,
         })
         .collect()
