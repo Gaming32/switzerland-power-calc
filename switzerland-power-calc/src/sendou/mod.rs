@@ -3,7 +3,6 @@ pub mod lang;
 pub mod leaderboard;
 mod rank_set;
 pub mod schema;
-pub mod turbo_stream;
 mod types;
 pub mod utils;
 
@@ -13,7 +12,7 @@ use crate::sendou::lang::{CommandIdDisplay, Language};
 use crate::sendou::schema::{
     GetTournamentBracketResponse, GetTournamentBracketStandingsResponse,
     GetTournamentMatchResponse, GetTournamentResponse, GetTournamentTeamsResponse, MatchData,
-    ParticipantResult, Side, TournamentRoundMapsType,
+    ParticipantResult, Side,
 };
 use crate::sendou::types::{DiscordChannelsMap, TeamsMap};
 use crate::{
@@ -533,12 +532,6 @@ async fn run_tournament(
         )
         .await?;
 
-        let rounds: HashMap<_, _> = brackets
-            .iter()
-            .flat_map(|bracket| &bracket.data.round)
-            .map(|round| (round.id, round))
-            .collect();
-
         let mut new_players = players.clone();
         let mut ranked_players = RankVec::new(
             players
@@ -553,7 +546,6 @@ async fn run_tournament(
                 continue;
             }
 
-            let match_round = rounds[&tourney_match.round_id];
             if tourney_match.winner_side.is_some() {
                 let score1 = tourney_match.opponent1.unwrap().score;
                 let score2 = tourney_match.opponent2.unwrap().score;

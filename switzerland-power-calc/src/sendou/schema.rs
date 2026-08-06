@@ -1,8 +1,5 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_repr::Deserialize_repr;
-use serde_with::DefaultOnNull;
-use serde_with::{BoolFromInt, json::JsonString, serde_as};
 
 pub type SendouId = u32;
 
@@ -111,40 +108,15 @@ pub struct ParticipantResult {
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RoundData {
-    pub id: SendouId,
-    pub maps: Option<TournamentRoundMaps>,
-}
-
-#[derive(Copy, Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct MatchData {
     pub opponent1: Option<ParticipantResult>,
     pub opponent2: Option<ParticipantResult>,
     pub winner_side: Option<Side>,
     pub id: SendouId,
-    pub round_id: SendouId,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BracketData {
-    pub round: Vec<RoundData>,
     pub r#match: Vec<MatchData>,
-}
-
-// https://github.com/sendou-ink/sendou.ink/blob/main/app/db/tables-json.ts#L187
-
-#[derive(Copy, Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TournamentRoundMaps {
-    pub count: u32,
-    pub r#type: TournamentRoundMapsType,
-}
-
-#[derive(Copy, Clone, Debug, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TournamentRoundMapsType {
-    BestOf,
-    PlayAll,
 }

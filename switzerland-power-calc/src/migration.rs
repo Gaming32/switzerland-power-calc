@@ -1,16 +1,12 @@
 use crate::{query_json, Result};
 use crate::db::{Database, PlayerId};
 use crate::sendou::schema::{GetUserIdsResponse, GetUserResponse};
-use crate::sendou::turbo_stream::TurboStreamed;
 use ansi_term::Color;
 use itertools::Itertools;
-use reqwest::{header, Client};
+use reqwest::Client;
 use std::io;
 use std::io::Write;
 use std::path::Path;
-use reqwest::header::HeaderMap;
-use serde::Deserialize;
-use crate::sendou::SendouId;
 use crate::sendou::utils::sendou_read_token_headers;
 
 #[derive(clap::ValueEnum, Copy, Clone, Debug)]
