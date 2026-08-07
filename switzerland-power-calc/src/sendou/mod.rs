@@ -1008,9 +1008,9 @@ async fn send_summaries_to_discord(
             tournament
                 .brackets
                 .iter()
-                .skip(1)
-                .filter(|bracket| !bracket.name.contains("UG"))
                 .enumerate()
+                .skip(1)
+                .filter(|(_, bracket)| !bracket.name.contains("UG"))
                 .map(async |(idx, bracket)| {
                     let standings: GetTournamentBracketStandingsResponse = query_json!(
                         http_client,
