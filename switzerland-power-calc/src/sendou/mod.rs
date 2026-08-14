@@ -22,6 +22,7 @@ use crate::{
 use chrono::Utc;
 use dashmap::DashMap;
 use itertools::Itertools;
+use ordered_float::OrderedFloat;
 use reqwest::{Client as ReqwestClient, Client, StatusCode};
 use rustyline_async::{Readline, ReadlineError, ReadlineEvent, SharedWriter};
 use serde_json::json;
@@ -131,8 +132,14 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
     let old_players = Database::read(in_db)?.into_map();
     let mut new_players = old_players.clone();
 
-    let tournament_teams: Vec<GetTournamentTeamsResponse> =
+    let mut tournament_teams: Vec<GetTournamentTeamsResponse> =
         query_json!(http_client, "/api/tournament/{}/teams", tournament_id);
+    tournament_teams.sort_by_key(|team| {
+        team.seeding_power
+            .unranked
+            .map_or(OrderedFloat::default(), |power| OrderedFloat(-power))
+    });
+
     let teams = initialize_teams(
         tournament_id,
         &tournament_teams,
@@ -161,8 +168,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
         guild_channels,
         chat_category.id,
         language_command_id,
-        tournament_id,
-        &http_client,
+        &tournament_teams,
         &mut new_players,
     )
     .await?;
@@ -410,8 +416,7 @@ async fn create_discord_channels(
     mut guild_channels_by_name: HashMap<String, ChannelId>,
     category: ChannelId,
     language_command_id: CommandId,
-    tournament_id: SendouId,
-    http_client: &ReqwestClient,
+    tournament_teams: &[GetTournamentTeamsResponse],
     players: &mut SwitzerlandPlayerMap,
 ) -> Result<DiscordChannelsMap> {
     println!("Creating Discord channels...");
@@ -421,9 +426,7 @@ async fn create_discord_channels(
     let me_user = discord_http.cache().current_user();
     let commentators_role = utils::env("DISCORD_COMMENTATORS_ROLE_ID")?;
 
-    let tournament_teams: Vec<GetTournamentTeamsResponse> =
-        query_json!(http_client, "/api/tournament/{}/teams", tournament_id);
-    for team in &tournament_teams {
+    for team in tournament_teams {
         if !team.checked_in {
             continue;
         }
