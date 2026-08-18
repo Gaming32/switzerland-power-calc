@@ -29,4 +29,3 @@ dashmap = "6.1.0"
 derive_more = { workspace = true, features = ["display"] }
 switzerland-power-animated = { path = "../switzerland-power-animated" }
 rustyline-async = "0.4.9"
-ordered-float = "5.3.0"
