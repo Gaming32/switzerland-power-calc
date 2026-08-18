@@ -421,15 +421,20 @@ async fn create_discord_channels(
     let me_user = discord_http.cache().current_user();
     let commentators_role = utils::env("DISCORD_COMMENTATORS_ROLE_ID")?;
 
-    let tournament_teams: Vec<GetTournamentTeamsResponse> =
+    let mut tournament_teams: Vec<GetTournamentTeamsResponse> =
         query_json!(http_client, "/api/tournament/{}/teams", tournament_id);
-    for team in &tournament_teams {
+    tournament_teams.sort_by(|team1, team2| {
+        let player1 = &players[&PlayerId::Sendou(team1.members.first().unwrap().user_id)];
+        let player2 = &players[&PlayerId::Sendou(team2.members.first().unwrap().user_id)];
+        player1.descending_rating_order_cmp(player2)
+    });
+    for team in tournament_teams {
         if !team.checked_in {
             continue;
         }
         let player = team.members.first().unwrap();
 
-        let switzerland_player = players.get_mut(&PlayerId::Sendou(player.user_id)).unwrap();
+        let switzerland_player = &mut players[&PlayerId::Sendou(player.user_id)];
         let guess_language = switzerland_player.language.is_none();
         let language = switzerland_player.language.get_or_insert_with(|| {
             player
@@ -593,7 +598,7 @@ async fn run_tournament(
                                            new_rating,
                                            language|
                    -> Result<()> {
-                let player = new_players.get_mut(player).unwrap();
+                let player = &mut new_players[player];
                 let old_player = player.clone();
                 player.rating = new_rating;
                 player.unrated = false;
