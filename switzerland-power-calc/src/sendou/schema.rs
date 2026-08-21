@@ -1,186 +1,122 @@
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_repr::Deserialize_repr;
-use serde_with::DefaultOnNull;
-use serde_with::{BoolFromInt, json::JsonString, serde_as};
 
 pub type SendouId = u32;
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct ToResponse {
-    #[serde(rename = "features/tournament/routes/to.$id")]
-    pub to: TournamentDataWrapper,
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Deserialize)]
-pub struct TournamentDataWrapper {
-    #[serde_as(as = "JsonString")]
-    pub data: TournamentRoot,
-}
+// https://github.com/sendou-ink/sendou.ink/blob/main/app/features/api-public/schema.ts
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct TournamentRoot {
-    pub tournament: Tournament,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct Tournament {
-    pub data: TournamentData,
-    #[serde(rename = "ctx")]
-    pub context: TournamentContext,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct TournamentData {
-    #[serde(rename = "stage")]
-    pub stages: Vec<TournamentStage>,
-    #[serde(rename = "group")]
-    pub groups: Vec<TournamentGroup>,
-    #[serde(rename = "round")]
-    pub rounds: Vec<TournamentRound>,
-    #[serde(rename = "match")]
-    pub matches: Vec<TournamentMatch>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct TournamentStage {
+#[serde(rename_all = "camelCase")]
+pub struct GetUserResponse {
     pub id: SendouId,
     pub name: String,
-    #[serde(flatten)]
-    pub settings: TournamentStageSettings,
-}
-
-#[derive(Copy, Clone, Debug, Deserialize)]
-#[serde(tag = "type", content = "settings", rename_all = "snake_case")]
-pub enum TournamentStageSettings {
-    SingleElimination {},
-    DoubleElimination {},
-    RoundRobin {},
-    Swiss {},
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TournamentGroup {
+pub struct GetUserIdsResponse {
     pub id: SendouId,
-    pub number: u32,
-    pub stage_id: SendouId,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TournamentRound {
-    pub group_id: SendouId,
-    pub id: SendouId,
-    pub number: u32,
-    pub maps: TournamentRoundMaps,
-}
-
-#[derive(Copy, Clone, Debug, Deserialize)]
-pub struct TournamentRoundMaps {
-    pub count: u32,
-    #[serde(rename = "type")]
-    pub match_type: TournamentRoundMapsMatchType,
-}
-
-#[derive(Copy, Clone, Debug, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum TournamentRoundMapsMatchType {
-    BestOf,
-    PlayAll,
-}
-
-#[derive(Copy, Clone, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TournamentMatch {
-    pub id: SendouId,
-    pub opponent1: Option<TournamentMatchOpponent>,
-    pub opponent2: Option<TournamentMatchOpponent>,
-    pub round_id: SendouId,
-    pub winner_side: Option<TournamentMatchWinnerSide>,
-}
-
-#[derive(Copy, Clone, Debug, Deserialize)]
-pub struct TournamentMatchOpponent {
-    pub id: Option<SendouId>,
-    #[serde(default)]
-    pub score: u32,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum TournamentMatchWinnerSide {
-    Opponent1,
-    Opponent2,
-}
-
-#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TournamentContext {
-    pub id: SendouId,
+pub struct GetTournamentMatchResponse {
+    pub map_list: Option<Vec<MapListMap>>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetTournamentResponse {
     pub name: String,
-    // #[serde(with = "chrono::serde::ts_seconds")]
-    // pub start_time: DateTime<Utc>,
-    #[serde_as(as = "BoolFromInt")]
+    pub start_time: DateTime<Utc>,
+    pub brackets: Vec<TournamentBracket>,
     pub is_finalized: bool,
-    pub teams: Vec<TournamentTeam>,
 }
 
-#[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TournamentTeam {
+pub struct GetTournamentTeamsResponse {
     pub id: SendouId,
     pub name: String,
-    pub members: Vec<TournamentTeamMember>,
-    pub check_ins: Vec<TournamentTeamCheckIn>,
-    #[serde_as(deserialize_as = "DefaultOnNull")]
-    pub avg_seeding_skill_ordinal: f64,
+    pub checked_in: bool,
+    pub seeding_power: GetTournamentTeamsResponseSeedingPower,
+    pub members: Vec<GetTournamentTeamsResponseMember>,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetTournamentTeamsResponseSeedingPower {
+    pub unranked: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TournamentTeamMember {
+pub struct GetTournamentTeamsResponseMember {
     pub user_id: SendouId,
-    pub username: String,
+    pub name: String,
     pub discord_id: serenity::all::UserId,
     pub country: Option<String>,
 }
 
-#[derive(Copy, Clone, Debug, Deserialize)]
-pub struct TournamentTeamCheckIn {}
-
 #[derive(Clone, Debug, Deserialize)]
-pub struct ToMatchResponse {
-    #[serde(rename = "features/tournament-match/routes/to.$id.matches.$mid")]
-    pub to_match: MatchDataWrapper,
+#[serde(rename_all = "camelCase")]
+pub struct GetTournamentBracketResponse {
+    pub data: TournamentBracketData,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct MatchDataWrapper {
-    pub data: MatchRoot,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-pub struct MatchRoot {
-    pub results: Vec<MatchResult>,
+#[serde(rename_all = "camelCase")]
+pub struct GetTournamentBracketStandingsResponse {
+    pub standings: Vec<GetTournamentBracketStandingsResponseStandings>,
 }
 
 #[derive(Copy, Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct MatchResult {
-    pub winner_team_id: SendouId,
+pub struct GetTournamentBracketStandingsResponseStandings {
+    pub tournament_team_id: SendouId,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MapListMap {
+    pub winner_team_id: Option<SendouId>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct SendouUserRoot {
-    pub user: SendouUser,
+#[serde(rename_all = "camelCase")]
+pub struct TournamentBracket {
+    pub name: String,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct SendouUser {
+pub type TournamentBracketData = BracketData;
+
+// https://github.com/sendou-ink/sendou.ink/blob/main/app/features/tournament-bracket/core/engine/types.ts
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Side {
+    Opponent1,
+    Opponent2,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParticipantResult {
+    pub id: Option<SendouId>,
+    pub score: Option<u32>,
+}
+
+#[derive(Copy, Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MatchData {
+    pub opponent1: Option<ParticipantResult>,
+    pub opponent2: Option<ParticipantResult>,
+    pub winner_side: Option<Side>,
     pub id: SendouId,
-    pub username: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BracketData {
+    pub r#match: Vec<MatchData>,
 }

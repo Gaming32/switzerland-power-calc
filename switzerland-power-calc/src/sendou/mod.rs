@@ -1,25 +1,28 @@
-mod cli_helpers;
 mod discord;
 pub mod lang;
 pub mod leaderboard;
 mod rank_set;
 pub mod schema;
-pub mod turbo_stream;
 mod types;
+pub mod utils;
 
 use crate::db::{Database, PlayerId, SwitzerlandPlayer, SwitzerlandPlayerMap};
 use crate::sendou::discord::{DiscordEventHandler, DiscordHttp};
 use crate::sendou::lang::{CommandIdDisplay, Language};
-use crate::sendou::schema::{ToMatchResponse, ToResponse, Tournament, TournamentContext, TournamentData, TournamentMatch, TournamentMatchOpponent, TournamentMatchWinnerSide, TournamentRoundMapsMatchType, TournamentStageSettings, TournamentTeam};
-use crate::sendou::types::{DiscordChannelsMap, GetTournamentFn, TeamsMap};
+use crate::sendou::schema::{
+    GetTournamentBracketResponse, GetTournamentBracketStandingsResponse,
+    GetTournamentMatchResponse, GetTournamentResponse, GetTournamentTeamsResponse, MatchData,
+    ParticipantResult, Side,
+};
+use crate::sendou::types::{DiscordChannelsMap, TeamsMap};
 use crate::{
     Error, MAXIMUM_CALCED_RD, Result, format_player_rank_summary, format_player_simply, format_sp,
-    summarize_differences,
+    query_json, summarize_differences,
 };
 use chrono::Utc;
 use dashmap::DashMap;
 use itertools::Itertools;
-use reqwest::{Client as ReqwestClient, Client};
+use reqwest::{Client as ReqwestClient, Client, StatusCode};
 use rustyline_async::{Readline, ReadlineError, ReadlineEvent, SharedWriter};
 use serde_json::json;
 use serenity::FutureExt;
@@ -30,6 +33,7 @@ use serenity::all::{
     PermissionOverwriteType, Permissions, UserId,
 };
 use serenity::futures::TryStreamExt;
+use serenity::futures::future::try_join_all;
 use serenity::model::Timestamp;
 use skillratings::Outcomes;
 use skillratings::glicko2::{Glicko2Config, Glicko2Rating, decay_deviation, glicko2};
@@ -38,7 +42,6 @@ use std::fmt::Write as FmtWrite;
 use std::io::{Read, Write as IoWrite};
 use std::path::{Path, PathBuf};
 use std::process::exit;
-use std::str::FromStr;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use std::{fs, io};
@@ -50,12 +53,10 @@ use tokio::time::{Interval, MissedTickBehavior, sleep};
 use unic_emoji_char::is_emoji_presentation;
 
 use crate::counts::{leaderboard_count, show_placement_count};
-use crate::error::ErrorKind;
 pub use crate::migration::migration_cli;
-use crate::sendou::cli_helpers::print_seeding_instructions;
 use crate::sendou::leaderboard::generate_leaderboard_messages;
 use crate::sendou::rank_set::RankVec;
-use crate::sendou::turbo_stream::TurboStreamed;
+use crate::sendou::utils::{print_seeding_instructions, sendou_read_token_headers};
 pub use schema::SendouId;
 
 const POLL_TIME: Duration = Duration::from_secs(10);
@@ -69,9 +70,6 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
         fs::create_dir_all(parent)?;
     }
 
-    let tournament_url = format!(
-        "https://sendou.ink/to/{tournament_id}/register.data?_routes=features/tournament/routes/to.$id"
-    );
     let http_client = reqwest::ClientBuilder::new()
         .user_agent(concat!(
             env!("CARGO_PKG_NAME"),
@@ -79,6 +77,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
             env!("CARGO_PKG_VERSION"),
             ")"
         ))
+        .default_headers(sendou_read_token_headers()?)
         .build()?;
 
     let discord_user_languages = Arc::new(DashMap::new());
@@ -86,7 +85,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
     let (discord_ready_send, discord_ready) = oneshot::channel();
     let language_command_lock = Arc::new(RwLock::new(None));
     let discord_client = serenity::client::ClientBuilder::new(
-        env_str("DISCORD_BOT_TOKEN")?,
+        utils::env_str("DISCORD_BOT_TOKEN")?,
         GatewayIntents::GUILDS | GatewayIntents::GUILD_MEMBERS,
     )
     .event_handler(DiscordEventHandler {
@@ -101,7 +100,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
     discord_ready.await.unwrap();
     let discord_http = DiscordHttp::new(discord_client.cache.clone(), discord_client.http.clone());
 
-    let chat_category = match env::<ChannelId>("DISCORD_CHAT_CATEGORY_ID")?
+    let chat_category = match utils::env::<ChannelId>("DISCORD_CHAT_CATEGORY_ID")?
         .to_channel(&discord_http)
         .await?
     {
@@ -126,44 +125,22 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
             .to_guild_cached(discord_http.cache())
             .ok_or_else(|| "Chat category Discord is not accessible by bot".into())
     };
-    let leaderboard_channel = env::<ChannelId>("DISCORD_LEADERBOARD_CHANNEL_ID")?;
-    let moderator_channel = env::<ChannelId>("DISCORD_MODERATOR_CHANNEL_ID")?;
-
-    let get_tournament = async || -> Result<_> {
-        let real_get = async || {
-            Ok(http_client
-                .get(&tournament_url)
-                .send()
-                .await?
-                .error_for_status()?
-                .json::<TurboStreamed<ToResponse>>()
-                .await?
-                .0
-                .to
-                .data
-                .tournament)
-        };
-        for i in 1..=4 {
-            let result = real_get().await;
-            match &result {
-                Ok(_) => return result,
-                Err(Error {
-                    error: ErrorKind::Http(http),
-                    ..
-                }) if http.is_decode() => return result,
-                _ => {}
-            }
-            sleep(Duration::from_secs(1 << i)).await;
-        }
-        real_get().await
-    };
-    let initial_tournament = get_tournament().await?;
+    let leaderboard_channel = utils::env::<ChannelId>("DISCORD_LEADERBOARD_CHANNEL_ID")?;
+    let moderator_channel = utils::env::<ChannelId>("DISCORD_MODERATOR_CHANNEL_ID")?;
 
     let old_players = Database::read(in_db)?.into_map();
     let mut new_players = old_players.clone();
 
-    let teams = initialize_teams(&initial_tournament, &mut new_players, &http_client).await?;
-    wait_for_tournament_start(&initial_tournament.context, &get_tournament).await?;
+    let tournament_teams: Vec<GetTournamentTeamsResponse> =
+        query_json!(http_client, "/api/tournament/{}/teams", tournament_id);
+    let teams = initialize_teams(
+        tournament_id,
+        &tournament_teams,
+        &mut new_players,
+        &http_client,
+    )
+    .await?;
+    wait_for_tournament_start(tournament_id, &http_client).await?;
 
     let language_command = create_language_command();
     let language_command_id = get_guild()?
@@ -184,7 +161,8 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
         guild_channels,
         chat_category.id,
         language_command_id,
-        &get_tournament,
+        tournament_id,
+        &http_client,
         &mut new_players,
     )
     .await?;
@@ -196,7 +174,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
         &teams,
         &discord_user_languages,
         &discord_channels,
-        &get_tournament,
+        tournament_id,
     )
     .await?;
 
@@ -209,7 +187,8 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
         &old_players,
         &teams,
         &new_db,
-        &get_tournament,
+        tournament_id,
+        &http_client,
     )
     .await?;
 
@@ -249,21 +228,9 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
     Ok(())
 }
 
-fn env_str(var: &str) -> Result<String> {
-    dotenvy::var(var).map_err(|_| ErrorKind::MissingEnv(var.to_string()).into())
-}
-
-fn env<T: FromStr>(var: &str) -> Result<T>
-where
-    <T as FromStr>::Err: std::error::Error + Send + 'static,
-{
-    env_str(var)?
-        .parse()
-        .map_err(|e| ErrorKind::InvalidEnv(var.to_string(), Box::new(e)).into())
-}
-
 async fn initialize_teams<'a>(
-    tournament: &'a Tournament,
+    tournament_id: SendouId,
+    tournament_teams: &'a [GetTournamentTeamsResponse],
     players: &mut SwitzerlandPlayerMap,
     http_client: &Client,
 ) -> Result<TeamsMap<'a>> {
@@ -271,9 +238,14 @@ async fn initialize_teams<'a>(
     for player in players.values_mut() {
         player.since_played += 1;
     }
-    for team in &tournament.context.teams {
+    for team in tournament_teams {
         let player = team.members.first().expect("Sendou team has no members");
-        let starting_rating = team.avg_seeding_skill_ordinal.clamp(-10.0, 40.0);
+        // Using unranked power because that's what we've historically done, and the math is tuned to it
+        let starting_rating = team
+            .seeding_power
+            .unranked
+            .map_or(0.0, |power| (power - 1000.0) / 15.0)
+            .clamp(-10.0, 40.0);
         teams.insert(team.id, team);
         players
             .entry(PlayerId::Sendou(player.user_id))
@@ -294,7 +266,7 @@ async fn initialize_teams<'a>(
                 unrated: true,
                 ..Default::default()
             })
-            .display_name = Some(player.username.clone());
+            .display_name = Some(player.name.clone());
     }
 
     let sorted_players = print_seeding_instructions(
@@ -309,14 +281,14 @@ async fn initialize_teams<'a>(
             format!(
                 "{} ({}) [{}{}]",
                 team.name,
-                team.members.first().unwrap().username,
+                team.members.first().unwrap().name,
                 format_sp(player.rating, true),
                 if player.unrated { " (NEW)" } else { "" }
             )
         },
     );
 
-    if tournament.data.stages.is_empty() {
+    if !tournament_started(tournament_id, http_client).await? {
         let mut seeded_team_ids = vec![];
         let (above_1500, below_1500) = sorted_players.split_at(
             sorted_players
@@ -325,7 +297,7 @@ async fn initialize_teams<'a>(
                 .unwrap_or(sorted_players.len()),
         );
         seeded_team_ids.extend(above_1500.iter().map(|(t, _)| t.id));
-        for team in &tournament.context.teams {
+        for team in tournament_teams {
             let player = &players[&PlayerId::Sendou(team.members.first().unwrap().user_id)];
             if player.rating.rating == 1500.0 {
                 seeded_team_ids.push(team.id);
@@ -334,10 +306,9 @@ async fn initialize_teams<'a>(
         seeded_team_ids.extend(below_1500.iter().map(|(t, _)| t.id));
         http_client
             .post(format!(
-                "https://sendou.ink/api/tournament/{}/seeds",
-                tournament.context.id
+                "https://sendou.ink/api/tournament/{tournament_id}/seeds"
             ))
-            .bearer_auth(env_str("SENDOU_WRITE_TOKEN")?)
+            .bearer_auth(utils::env_str("SENDOU_WRITE_TOKEN")?)
             .json(&json!({
                 "tournamentTeamIds": seeded_team_ids,
             }))
@@ -350,31 +321,45 @@ async fn initialize_teams<'a>(
 }
 
 async fn wait_for_tournament_start(
-    tournament_context: &TournamentContext,
-    get_tournament: &impl GetTournamentFn,
+    tournament_id: SendouId,
+    http_client: &ReqwestClient,
 ) -> Result<()> {
-    // if let Ok(delay) = tournament_context
-    //     .start_time
-    //     .signed_duration_since(Utc::now())
-    //     .to_std()
-    // {
-    //     println!(
-    //         "Waiting {}m {}s for tournament start time...",
-    //         delay.as_secs() / 60,
-    //         delay.as_secs() % 60
-    //     );
-    //     sleep(delay).await;
-    // }
-    // 
-    // println!("Waiting for tournament to be started...");
-    // loop {
-    //     if !get_tournament().await?.data.stages.is_empty() {
-    //         break;
-    //     }
-    //     sleep(POLL_TIME).await;
-    // }
+    let tournament: GetTournamentResponse =
+        query_json!(http_client, "/api/tournament/{}", tournament_id);
+    if let Ok(delay) = tournament
+        .start_time
+        .signed_duration_since(Utc::now())
+        .to_std()
+    {
+        println!(
+            "Waiting {}m {}s for tournament start time...",
+            delay.as_secs() / 60,
+            delay.as_secs() % 60
+        );
+        sleep(delay).await;
+    }
+
+    println!("Waiting for tournament to be started...");
+    loop {
+        if tournament_started(tournament_id, http_client).await? {
+            break;
+        }
+        sleep(POLL_TIME).await;
+    }
 
     Ok(())
+}
+
+async fn tournament_started(tournament_id: SendouId, http_client: &ReqwestClient) -> Result<bool> {
+    let tournament_started = http_client
+        .get(format!(
+            "https://sendou.ink/api/tournament/{tournament_id}/brackets/0/standings"
+        ))
+        .send()
+        .await?
+        .status()
+        != StatusCode::NOT_FOUND;
+    Ok(tournament_started)
 }
 
 fn create_language_command() -> CreateCommand {
@@ -425,7 +410,8 @@ async fn create_discord_channels(
     mut guild_channels_by_name: HashMap<String, ChannelId>,
     category: ChannelId,
     language_command_id: CommandId,
-    get_tournament: &impl GetTournamentFn,
+    tournament_id: SendouId,
+    http_client: &ReqwestClient,
     players: &mut SwitzerlandPlayerMap,
 ) -> Result<DiscordChannelsMap> {
     println!("Creating Discord channels...");
@@ -433,15 +419,22 @@ async fn create_discord_channels(
     let mut channels = HashMap::new();
 
     let me_user = discord_http.cache().current_user();
-    let commentators_role = env("DISCORD_COMMENTATORS_ROLE_ID")?;
+    let commentators_role = utils::env("DISCORD_COMMENTATORS_ROLE_ID")?;
 
-    for team in get_tournament().await?.context.teams {
-        if team.check_ins.is_empty() {
+    let mut tournament_teams: Vec<GetTournamentTeamsResponse> =
+        query_json!(http_client, "/api/tournament/{}/teams", tournament_id);
+    tournament_teams.sort_by(|team1, team2| {
+        let player1 = &players[&PlayerId::Sendou(team1.members.first().unwrap().user_id)];
+        let player2 = &players[&PlayerId::Sendou(team2.members.first().unwrap().user_id)];
+        player1.descending_rating_order_cmp(player2)
+    });
+    for team in tournament_teams {
+        if !team.checked_in {
             continue;
         }
         let player = team.members.first().unwrap();
 
-        let switzerland_player = players.get_mut(&PlayerId::Sendou(player.user_id)).unwrap();
+        let switzerland_player = &mut players[&PlayerId::Sendou(player.user_id)];
         let guess_language = switzerland_player.language.is_none();
         let language = switzerland_player.language.get_or_insert_with(|| {
             player
@@ -515,7 +508,7 @@ async fn run_tournament(
     teams: &TeamsMap<'_>,
     discord_user_languages: &DashMap<UserId, Language>,
     discord_channels: &DiscordChannelsMap,
-    get_tournament: &impl GetTournamentFn,
+    tournament_id: SendouId,
 ) -> Result<()> {
     let mut command_engine = CommandEngine::new()?;
 
@@ -526,13 +519,23 @@ async fn run_tournament(
     let show_placement_count = show_placement_count(players.len());
 
     let new_players = loop {
-        let tournament = get_tournament().await?;
-        let rounds: HashMap<_, _> = tournament
-            .data
-            .rounds
-            .iter()
-            .map(|round| (round.id, round))
-            .collect();
+        let tournament: GetTournamentResponse =
+            query_json!(http_client, "/api/tournament/{}", tournament_id);
+        let brackets: Vec<GetTournamentBracketResponse> = try_join_all(
+            tournament
+                .brackets
+                .iter()
+                .enumerate()
+                .map(async |(idx, _)| {
+                    Result::Ok(query_json!(
+                        http_client,
+                        "/api/tournament/{}/brackets/{}",
+                        tournament_id,
+                        idx,
+                    ))
+                }),
+        )
+        .await?;
 
         let mut new_players = players.clone();
         let mut ranked_players = RankVec::new(
@@ -543,30 +546,20 @@ async fn run_tournament(
                 .collect_vec(),
         );
 
-        for tourney_match in tournament.data.matches {
+        for tourney_match in brackets.iter().flat_map(|bracket| &bracket.data.r#match) {
             if command_engine.ignored_matches.contains(&tourney_match.id) {
                 continue;
             }
 
-            let match_round = rounds[&tourney_match.round_id];
             if tourney_match.winner_side.is_some() {
                 let score1 = tourney_match.opponent1.unwrap().score;
                 let score2 = tourney_match.opponent2.unwrap().score;
-                let match_ended_normally = match match_round.maps.match_type {
-                    TournamentRoundMapsMatchType::BestOf => {
-                        let over_at_wins = match_round.maps.count.div_ceil(2);
-                        score1 == over_at_wins || score2 == over_at_wins
-                    }
-                    TournamentRoundMapsMatchType::PlayAll => {
-                        score1 + score2 == match_round.maps.count
-                    }
-                };
-                if !match_ended_normally {
+                if score1.is_none() || score2.is_none() {
                     continue;
                 }
             }
 
-            let get_player = |opponent: &Option<TournamentMatchOpponent>| {
+            let get_player = |opponent: &Option<ParticipantResult>| {
                 teams
                     .get(&opponent.unwrap().id.expect("Null opponent in ready match"))
                     .and_then(|team| {
@@ -590,8 +583,8 @@ async fn run_tournament(
                 &rating1,
                 &rating2,
                 &match tourney_match.winner_side.unwrap() {
-                    TournamentMatchWinnerSide::Opponent1 => Outcomes::WIN,
-                    TournamentMatchWinnerSide::Opponent2 => Outcomes::LOSS,
+                    Side::Opponent1 => Outcomes::WIN,
+                    Side::Opponent2 => Outcomes::LOSS,
                 },
                 &Glicko2Config::default(),
             );
@@ -599,13 +592,13 @@ async fn run_tournament(
                 writeln!(command_engine.printer, "In match {}:", tourney_match.id)?;
             }
             let mut update_player = async |win,
-                                           team: &TournamentTeam,
-                                           other_team: &TournamentTeam,
+                                           team: &GetTournamentTeamsResponse,
+                                           other_team: &GetTournamentTeamsResponse,
                                            player,
                                            new_rating,
                                            language|
                    -> Result<()> {
-                let player = new_players.get_mut(player).unwrap();
+                let player = &mut new_players[player];
                 let old_player = player.clone();
                 player.rating = new_rating;
                 player.unrated = false;
@@ -636,8 +629,8 @@ async fn run_tournament(
                     http,
                     discord_channels,
                     discord_user_languages,
-                    &tournament.context,
-                    &tourney_match,
+                    tournament_id,
+                    tourney_match,
                     &animation_generator,
                     team,
                     other_team,
@@ -651,7 +644,7 @@ async fn run_tournament(
                 Ok(())
             };
             update_player(
-                tourney_match.winner_side == Some(TournamentMatchWinnerSide::Opponent1),
+                tourney_match.winner_side == Some(Side::Opponent1),
                 team1,
                 team2,
                 &player1,
@@ -660,7 +653,7 @@ async fn run_tournament(
             )
             .await?;
             update_player(
-                tourney_match.winner_side == Some(TournamentMatchWinnerSide::Opponent2),
+                tourney_match.winner_side == Some(Side::Opponent2),
                 team2,
                 team1,
                 &player2,
@@ -670,7 +663,7 @@ async fn run_tournament(
             .await?;
         }
 
-        if tournament.context.is_finalized {
+        if tournament.is_finalized {
             break new_players;
         }
 
@@ -803,11 +796,11 @@ fn send_progress_message_to_player(
     discord_http: &DiscordHttp,
     discord_channels: &DiscordChannelsMap,
     discord_user_languages: &DashMap<UserId, Language>,
-    tournament_context: &TournamentContext,
-    tourney_match: &TournamentMatch,
+    tournament_id: SendouId,
+    tourney_match: &MatchData,
     animation_generator: &AsyncAnimationGenerator,
-    team: &TournamentTeam,
-    other_team: &TournamentTeam,
+    team: &GetTournamentTeamsResponse,
+    other_team: &GetTournamentTeamsResponse,
     win: bool,
     old_player: &SwitzerlandPlayer,
     new_player: &SwitzerlandPlayer,
@@ -865,38 +858,26 @@ fn send_progress_message_to_player(
                 true => language.to_animation_language().win(),
                 false => language.to_animation_language().lose(),
             },
-            &other_team.members.first().unwrap().username,
+            &other_team.members.first().unwrap().name,
         ),
         &format!(
             "<https://sendou.ink/to/{}/matches/{}>",
-            tournament_context.id, tourney_match.id,
+            tournament_id, tourney_match.id,
         ),
     );
 
     let http_client = http_client.clone();
     let discord_http = discord_http.clone();
-    let tourney_id = tournament_context.id;
     let set_id = tourney_match.id;
     let animation_generator = animation_generator.clone();
     let my_team_id = team.id;
     tokio::spawn(
         async move {
             if let PowerStatus::SetPlayed { matches, .. } = &mut power_status {
-                let match_results = http_client
-                    .get(format!(
-                        "https://sendou.ink/to/{tourney_id}/matches/{set_id}.data?_routes=features/tournament-match/routes/to.$id.matches.$mid"
-                    ))
-                    .send()
-                    .await?
-                    .error_for_status()?
-                    .json::<TurboStreamed<ToMatchResponse>>()
-                    .await?
-                    .0
-                    .to_match
-                    .data
-                    .results;
-                for (i, result) in match_results.into_iter().enumerate() {
-                    matches[i] = if result.winner_team_id == my_team_id {
+                let match_data: GetTournamentMatchResponse =
+                    query_json!(http_client, "/api/tournament-match/{}", set_id);
+                for (i, result) in match_data.map_list.unwrap().into_iter().enumerate() {
+                    matches[i] = if result.winner_team_id.unwrap() == my_team_id {
                         MatchOutcome::Win
                     } else {
                         MatchOutcome::Lose
@@ -926,10 +907,11 @@ fn send_progress_message_to_player(
                 )
                 .await;
             if let Err(result) = send_result {
-                if let Ok(backups_dir) = env::<PathBuf>("GENERATED_ANIM_BACKUPS_DIR")
-                    && let Err(err) = fs::write(backups_dir.join(&filename), &animation) {
-                        println!("Failed to save backup animation file for {set_id}: {err}");
-                    }
+                if let Ok(backups_dir) = utils::env::<PathBuf>("GENERATED_ANIM_BACKUPS_DIR")
+                    && let Err(err) = fs::write(backups_dir.join(&filename), &animation)
+                {
+                    println!("Failed to save backup animation file for {set_id}: {err}");
+                }
                 return Err(result.into());
             }
             Ok::<(), Error>(())
@@ -974,13 +956,13 @@ async fn send_summaries_to_discord(
     old_players: &SwitzerlandPlayerMap,
     teams: &TeamsMap<'_>,
     new_db: &Database,
-    get_tournament: &impl GetTournamentFn,
+    tournament_id: SendouId,
+    http_client: &ReqwestClient,
 ) -> Result<()> {
     println!("\nSending comparison to Discord...");
-    let tournament = get_tournament().await?;
     let player_id_to_discord_id = teams
         .values()
-        .filter(|team| !team.check_ins.is_empty())
+        .filter(|team| team.checked_in)
         .map(|team| team.members.first().unwrap())
         .map(|player| (PlayerId::Sendou(player.user_id), player.discord_id))
         .collect::<HashMap<_, _>>();
@@ -992,19 +974,22 @@ async fn send_summaries_to_discord(
         }
     }
 
+    let tournament: GetTournamentResponse =
+        query_json!(http_client, "/api/tournament/{}", tournament_id);
+    let tournament_teams: Vec<GetTournamentTeamsResponse> =
+        query_json!(http_client, "/api/tournament/{}/teams", tournament_id);
+
     {
         let mut message = String::new();
         let _ = writeln!(
             message,
             "And that concludes {}! Thank you all for participating, and I hope you had a good time.",
-            tournament.context.name
+            tournament.name,
         );
         let mut print_results = |title, results: &[SendouId; 3]| {
             let _ = writeln!(message, "## {title}");
             for (team_id, emoji) in results.iter().zip(['🥇', '🥈', '🥉']) {
-                let player = tournament
-                    .context
-                    .teams
+                let player = tournament_teams
                     .iter()
                     .find(|x| x.id == *team_id)
                     .unwrap()
@@ -1014,7 +999,7 @@ async fn send_summaries_to_discord(
                 let _ = writeln!(
                     message,
                     "- {emoji} {}{}",
-                    player.username,
+                    player.name,
                     if players_in_discord.contains(&player.discord_id) {
                         format!(" ({})", player.discord_id.mention())
                     } else {
@@ -1024,7 +1009,33 @@ async fn send_summaries_to_discord(
             }
         };
 
-        match &compute_results(&tournament.data)[..] {
+        let standings = try_join_all(
+            tournament
+                .brackets
+                .iter()
+                .enumerate()
+                .skip(1)
+                .filter(|(_, bracket)| !bracket.name.contains("UG"))
+                .map(async |(idx, bracket)| {
+                    let standings: GetTournamentBracketStandingsResponse = query_json!(
+                        http_client,
+                        "/api/tournament/{}/brackets/{}/standings",
+                        tournament_id,
+                        idx,
+                    );
+                    Result::Ok((
+                        bracket.name.as_str(),
+                        standings
+                            .standings
+                            .into_iter()
+                            .map(|standing| standing.tournament_team_id)
+                            .next_array::<3>()
+                            .unwrap(),
+                    ))
+                }),
+        )
+        .await?;
+        match &standings[..] {
             [] => {}
             [(_, results)] => print_results("Results".to_string(), results),
             all_results => {
@@ -1117,112 +1128,6 @@ async fn send_summaries_to_discord(
     }
 
     Ok(())
-}
-
-fn compute_results(tournament_data: &TournamentData) -> Vec<(&str, [SendouId; 3])> {
-    let find_match = |round_id| {
-        tournament_data
-            .matches
-            .iter()
-            .find(|x| x.round_id == round_id)
-    };
-    let find_finals_match = |group_id| {
-        let finals_round = tournament_data
-            .rounds
-            .iter()
-            .filter(|x| x.group_id == group_id)
-            .max_by_key(|x| x.number)?
-            .id;
-        find_match(finals_round)
-    };
-    let compute_results_for_se = |stage_id| {
-        let (main_group, third_place_group) = tournament_data
-            .groups
-            .iter()
-            .filter(|x| x.stage_id == stage_id)
-            .sorted_by_key(|x| x.number)
-            .map(|x| x.id)
-            .next_tuple()?;
-        let finals_match = find_finals_match(main_group)?;
-        let third_place_match = find_match(
-            tournament_data
-                .rounds
-                .iter()
-                .find(|x| x.group_id == third_place_group)?
-                .id,
-        )?;
-        Some([
-            match finals_match.winner_side.unwrap() {
-                TournamentMatchWinnerSide::Opponent1 => &finals_match.opponent1,
-                TournamentMatchWinnerSide::Opponent2 => &finals_match.opponent2,
-            }.unwrap().id.unwrap(),
-            match finals_match.winner_side.unwrap() {
-                TournamentMatchWinnerSide::Opponent1 => &finals_match.opponent2,
-                TournamentMatchWinnerSide::Opponent2 => &finals_match.opponent1,
-            }.unwrap().id.unwrap(),
-            match third_place_match.winner_side.unwrap() {
-                TournamentMatchWinnerSide::Opponent1 => &third_place_match.opponent1,
-                TournamentMatchWinnerSide::Opponent2 => &third_place_match.opponent2,
-            }.unwrap().id.unwrap(),
-        ])
-    };
-    // let compute_results_for_de = |stage_id| {
-    //     let (_, losers_group, grand_finals_group) = tournament_data
-    //         .groups
-    //         .iter()
-    //         .filter(|x| x.stage_id == stage_id)
-    //         .sorted_by_key(|x| x.number)
-    //         .map(|x| x.id)
-    //         .next_tuple()?;
-    //     let (grands_round_1, grands_round_2) = tournament_data
-    //         .rounds
-    //         .iter()
-    //         .filter(|x| x.group_id == grand_finals_group)
-    //         .sorted_by_key(|x| x.number)
-    //         .map(|x| x.id)
-    //         .next_tuple()?;
-    //     let grands_match_1 = find_match(grands_round_1)?;
-    //     let grands_match_2 = find_match(grands_round_2)?;
-    //     let losers_finals_match = find_finals_match(losers_group)?;
-    //     Some([
-    //         itertools::chain!(
-    //             grands_match_2.opponent1,
-    //             grands_match_2.opponent2,
-    //             grands_match_1.opponent1,
-    //             grands_match_1.opponent2
-    //         )
-    //         .find(|x| x.result == Some(TournamentMatchResult::Win))?
-    //         .id
-    //         .unwrap(),
-    //         itertools::chain!(
-    //             grands_match_2.opponent1,
-    //             grands_match_2.opponent2,
-    //             grands_match_1.opponent1,
-    //             grands_match_1.opponent2
-    //         )
-    //         .find(|x| x.result == Some(TournamentMatchResult::Loss))?
-    //         .id
-    //         .unwrap(),
-    //         itertools::chain(losers_finals_match.opponent1, losers_finals_match.opponent2)
-    //             .find(|x| x.result == Some(TournamentMatchResult::Loss))?
-    //             .id
-    //             .unwrap(),
-    //     ])
-    // };
-    tournament_data
-        .stages
-        .iter()
-        .sorted_by_key(|x| &x.name)
-        .filter_map(|stage| match stage.settings {
-            TournamentStageSettings::SingleElimination {} => {
-                Some((stage.name.as_str(), compute_results_for_se(stage.id)?))
-            }
-            // TournamentStageSettings::DoubleElimination {} => {
-            //     Some((stage.name.as_str(), compute_results_for_de(stage.id)?))
-            // }
-            _ => None,
-        })
-        .collect()
 }
 
 async fn clean_up_discord_channels(
