@@ -13,7 +13,7 @@ tokio.workspace = true
 itertools.workspace = true
 smallvec = "1.15.1"
 derive_more = { workspace = true, features = ["from_str"] }
-crossbeam-channel = "0.5.15"
+crossbeam-channel = "0.5.16"
 
 [dependencies.sdl2]
 version = "0.38.0"
@@ -21,7 +21,7 @@ default-features = false
 features = ["ttf", "image", "static-link", "use-vcpkg"]
 
 [build-dependencies]
-serde_json = "1.0.150"
+serde_json = "1.0.151"
 derive_more = { workspace = true, features = ["from_str"] }
 hashlink.workspace = true
 parse-format = "0.1.0"
