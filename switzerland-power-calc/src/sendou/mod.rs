@@ -155,7 +155,7 @@ pub async fn sendou_cli(in_db: &Path, out_db: &Path, tournament_id: SendouId) ->
         .values()
         .map(|channel| (channel.name.clone(), channel.id))
         .collect();
-    let discord_channels = create_discord_channels(
+    let discord_channels = post_initialize_teams(
         &discord_http,
         chat_category.guild_id,
         guild_channels,
@@ -247,15 +247,10 @@ async fn initialize_teams<'a>(
             .map_or(0.0, |power| (power - 1000.0) / 15.0)
             .clamp(-10.0, 40.0);
         teams.insert(team.id, team);
+        // RD decay is applied later in post_initialize_teams once check-in has closed and it's
+        // known which of these players actually checked in
         players
             .entry(PlayerId::Sendou(player.user_id))
-            .and_modify(|player| {
-                // since_played will be 1 above the desired value due to the increment above
-                for _ in 1..player.since_played {
-                    player.rating = decay_deviation(&player.rating);
-                }
-                player.since_played = 0;
-            })
             .or_insert_with(|| SwitzerlandPlayer {
                 id: PlayerId::Sendou(player.user_id),
                 rating: Glicko2Rating {
@@ -404,7 +399,7 @@ fn create_language_command() -> CreateCommand {
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn create_discord_channels(
+async fn post_initialize_teams(
     discord_http: &DiscordHttp,
     guild_id: GuildId,
     mut guild_channels_by_name: HashMap<String, ChannelId>,
@@ -435,6 +430,15 @@ async fn create_discord_channels(
         let player = team.members.first().unwrap();
 
         let switzerland_player = &mut players[&PlayerId::Sendou(player.user_id)];
+
+        // since_played will be 1 above the desired value due to the increment in initialize_teams.
+        // Only checked-in players are actually playing, so only they have their RD decay reset
+        // here.
+        for _ in 1..switzerland_player.since_played {
+            switzerland_player.rating = decay_deviation(&switzerland_player.rating);
+        }
+        switzerland_player.since_played = 0;
+
         let guess_language = switzerland_player.language.is_none();
         let language = switzerland_player.language.get_or_insert_with(|| {
             player
